@@ -9,108 +9,35 @@
 #include <dk_buttons_and_leds.h>
 #include "model_handler.h"
 
-static void led_set(struct bt_mesh_onoff_srv *srv, struct bt_mesh_msg_ctx *ctx,
-		    const struct bt_mesh_onoff_set *set,
-		    struct bt_mesh_onoff_status *rsp);
+// extern struct bt_mesh_sensor temperature_sensor;
+// extern struct bt_mesh_sensor motion_sensor;
+// extern struct bt_mesh_sensor light_sensor;
 
-static void led_get(struct bt_mesh_onoff_srv *srv, struct bt_mesh_msg_ctx *ctx,
-		    struct bt_mesh_onoff_status *rsp);
+static struct device *dev;
 
-static const struct bt_mesh_onoff_srv_handlers onoff_handlers = {
-	.set = led_set,
-	.get = led_get,
+static int temp_get(struct bt_mesh_sensor *sensor,
+                    struct bt_mesh_msg_ctx *ctx,
+                    struct sensor_value *rsp)
+{
+    sensor_sample_fetch(dev);
+    return sensor_channel_get(dev, SENSOR_CHAN_DIE_TEMP, rsp);
+}
+
+struct bt_mesh_sensor temperature_sensor = {
+    .type = &bt_mesh_sensor_present_dev_op_temp,
+    .get = temp_get,
 };
 
-struct led_ctx {
-	struct bt_mesh_onoff_srv srv;
-	struct k_delayed_work work;
-	u32_t remaining;
-	bool value;
+static struct bt_mesh_sensor* const sensors[] = {
+    &temperature_sensor,
+    // &motion_sensor,
+    // &light_sensor,
 };
 
-static struct led_ctx led_ctx[4] = {
-	[0 ... 3] = {
-		.srv = BT_MESH_ONOFF_SRV_INIT(&onoff_handlers),
-	}
-};
-
-static void led_transition_start(struct led_ctx *led)
-{
-	int led_idx = led - &led_ctx[0];
-
-	/* As long as the transition is in progress, the onoff
-	 * state is "on":
-	 */
-	dk_set_led(led_idx, true);
-	k_delayed_work_submit(&led->work, led->remaining);
-	led->remaining = 0;
-}
-
-static void led_status(struct led_ctx *led, struct bt_mesh_onoff_status *status)
-{
-	status->remaining_time =
-		k_delayed_work_remaining_get(&led->work) + led->remaining;
-	status->target_on_off = led->value;
-	/* As long as the transition is in progress, the onoff state is "on": */
-	status->present_on_off = led->value || status->remaining_time;
-}
-
-static void led_set(struct bt_mesh_onoff_srv *srv, struct bt_mesh_msg_ctx *ctx,
-		    const struct bt_mesh_onoff_set *set,
-		    struct bt_mesh_onoff_status *rsp)
-{
-	struct led_ctx *led = CONTAINER_OF(srv, struct led_ctx, srv);
-	int led_idx = led - &led_ctx[0];
-
-	if (set->on_off == led->value) {
-		goto respond;
-	}
-
-	led->value = set->on_off;
-	led->remaining = set->transition->time;
-
-	if (set->transition->delay > 0) {
-		k_delayed_work_submit(&led->work, set->transition->delay);
-	} else if (set->transition->time > 0) {
-		led_transition_start(led);
-	} else {
-		dk_set_led(led_idx, set->on_off);
-	}
-
-respond:
-	if (rsp) {
-		led_status(led, rsp);
-	}
-}
-
-static void led_get(struct bt_mesh_onoff_srv *srv, struct bt_mesh_msg_ctx *ctx,
-		    struct bt_mesh_onoff_status *rsp)
-{
-	struct led_ctx *led = CONTAINER_OF(srv, struct led_ctx, srv);
-
-	led_status(led, rsp);
-}
-
-static void led_work(struct k_work *work)
-{
-	struct led_ctx *led = CONTAINER_OF(work, struct led_ctx, work.work);
-	int led_idx = led - &led_ctx[0];
-
-	if (led->remaining) {
-		led_transition_start(led);
-	} else {
-		dk_set_led(led_idx, led->value);
-
-		/* Publish the new value at the end of the transition */
-		struct bt_mesh_onoff_status status;
-
-		led_status(led, &status);
-		bt_mesh_onoff_srv_pub(&led->srv, NULL, &status);
-	}
-}
+static struct bt_mesh_sensor_srv sensor_srv = BT_MESH_SENSOR_SRV_INIT(sensors, ARRAY_SIZE(sensors));
 
 /** Configuration server definition */
-static struct bt_mesh_cfg_srv cfg_srv = {
+static struct bt_mesh_cfg_srv cfg_srv = { // *** Configuration server definition
 	.relay = IS_ENABLED(CONFIG_BT_MESH_RELAY),
 	.beacon = BT_MESH_BEACON_ENABLED,
 	.frnd = IS_ENABLED(CONFIG_BT_MESH_FRIEND),
@@ -125,9 +52,9 @@ static struct bt_mesh_cfg_srv cfg_srv = {
 /* Set up a repeating delayed work to blink the DK's LEDs when attention is
  * requested.
  */
-static struct k_delayed_work attention_blink_work;
+static struct k_delayed_work attention_blink_work; // *** The delayed work context?
 
-static void attention_blink(struct k_work *work)
+static void attention_blink(struct k_work *work) // *** The attention blink *handler* function used by the kernel delayed work
 {
 	static int idx;
 	const u8_t pattern[] = {
@@ -140,59 +67,55 @@ static void attention_blink(struct k_work *work)
 	k_delayed_work_submit(&attention_blink_work, K_MSEC(30));
 }
 
-static void attention_on(struct bt_mesh_model *mod)
+static void attention_on(struct bt_mesh_model *mod) // *** Attention blinking *used by health server*
 {
 	k_delayed_work_submit(&attention_blink_work, K_NO_WAIT);
 }
 
-static void attention_off(struct bt_mesh_model *mod)
+static void attention_off(struct bt_mesh_model *mod) // *** Attention blinking *used by health server*
 {
 	k_delayed_work_cancel(&attention_blink_work);
 	dk_set_leds(DK_NO_LEDS_MSK);
 }
 
-static const struct bt_mesh_health_srv_cb health_srv_cb = {
+static const struct bt_mesh_health_srv_cb health_srv_cb = { // *** Healt server callback - defined in health server model context
 	.attn_on = attention_on,
 	.attn_off = attention_off,
 };
 
-static struct bt_mesh_health_srv health_srv = {
+static struct bt_mesh_health_srv health_srv = { // *** Health server model context
 	.cb = &health_srv_cb,
 };
 
-BT_MESH_HEALTH_PUB_DEFINE(health_pub, 0);
+BT_MESH_HEALTH_PUB_DEFINE(health_pub, 0); // *** Health model boiler plate?
 
-static struct bt_mesh_elem elements[] = {
+static struct bt_mesh_elem elements[] = { // *** The mesh elements of the node
 	BT_MESH_ELEM(
 		1, BT_MESH_MODEL_LIST(
 			BT_MESH_MODEL_CFG_SRV(&cfg_srv),
 			BT_MESH_MODEL_HEALTH_SRV(&health_srv, &health_pub),
-			BT_MESH_MODEL_ONOFF_SRV(&led_ctx[0].srv)),
-		BT_MESH_MODEL_NONE),
-	BT_MESH_ELEM(
-		2, BT_MESH_MODEL_LIST(BT_MESH_MODEL_ONOFF_SRV(&led_ctx[1].srv)),
-		BT_MESH_MODEL_NONE),
-	BT_MESH_ELEM(
-		3, BT_MESH_MODEL_LIST(BT_MESH_MODEL_ONOFF_SRV(&led_ctx[2].srv)),
-		BT_MESH_MODEL_NONE),
-	BT_MESH_ELEM(
-		4, BT_MESH_MODEL_LIST(BT_MESH_MODEL_ONOFF_SRV(&led_ctx[3].srv)),
+			BT_MESH_MODEL_SENSOR_SRV(&sensor_srv)),
 		BT_MESH_MODEL_NONE),
 };
 
-static const struct bt_mesh_comp comp = {
+static const struct bt_mesh_comp comp = { // *** The composition data used by bt_mesh_init()
 	.cid = CONFIG_BT_COMPANY_ID,
 	.elem = elements,
 	.elem_count = ARRAY_SIZE(elements),
 };
 
-const struct bt_mesh_comp *model_handler_init(void)
+const struct bt_mesh_comp *model_handler_init(void) // *** Returns the composition data to bt_mesh_init() after initiating the attention blink delayed work
 {
 	k_delayed_work_init(&attention_blink_work, attention_blink);
 
-	for (int i = 0; i < ARRAY_SIZE(led_ctx); ++i) {
-		k_delayed_work_init(&led_ctx[i].work, led_work);
+	dev = device_get_binding(DT_INST_0_NORDIC_NRF_TEMP_LABEL);
+
+	if (dev == NULL) {
+		printk("Could not get device\n");
+		return;
 	}
+
+	printk("*** Sensor reading test - Device: %s ***\n", dev->config->name);
 
 	return &comp;
 }
