@@ -34,15 +34,15 @@ static int chip_temp_get(struct bt_mesh_sensor *sensor,
 
 	err = sensor_channel_get(dev, SENSOR_CHAN_DIE_TEMP, rsp);
 
-	/* Should match the columns[] values */
-	if (rsp->val1 >= 0 && rsp->val1 <= 20) {
-		col_samps[0]++;
-	} else if (rsp->val1 > 20 && rsp->val1 <= 25) {
-		col_samps[1]++;
-	} else if (rsp->val1 > 25 && rsp->val1 <= 30) {
-		col_samps[2]++;
-	} else if (rsp->val1 > 30 && rsp->val1 <= 100) {
-		col_samps[3]++;
+	if (err) {
+		printk("Error getting temperature sensor data (%d)\n", err);
+	}
+
+	for (int i = 0; i < ARRAY_SIZE(columns); ++i) {
+		if (bt_mesh_sensor_value_in_column(rsp, &columns[i])) {
+			col_samps[i]++;
+			break;
+		}
 	}
 
 	tot_temp_samps++;
