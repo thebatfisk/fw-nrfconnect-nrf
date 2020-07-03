@@ -13,16 +13,13 @@
 
 #define LED_INTERVAL 2000
 
-static bool led_is_on = true;
-static bool button_toggled_on = true;
-
 static struct device *chip_temp_sensor;
+static struct device *io_expander;
 
 static struct device *spkr_pwr_ctrl;
 static struct device *spkr_pwm;
 static u32_t pwm_frequency = 880;
 
-static struct device *io_expander;
 const nrfx_pdm_config_t pdm_config = NRFX_PDM_DEFAULT_CONFIG(26, 25);
 static int16_t pdm_buffer_a[256];
 static int16_t pdm_buffer_b[256];
@@ -31,11 +28,7 @@ static const int fft_size = 256;
 static const int spectrum_size = fft_size / 2;
 int spectrum[128];
 
-static struct k_delayed_work blinking_work;
 static struct k_delayed_work microphone_work;
-static struct k_delayed_work attention_blink_work;
-
-static void attention_blink(struct k_work *work);
 
 static int nrfx_err_code_check(nrfx_err_t nrfx_err)
 {
@@ -46,31 +39,33 @@ static int nrfx_err_code_check(nrfx_err_t nrfx_err)
 	}
 }
 
-static void blinking_work_handler(struct k_work *work)
-{
-	if (!button_toggled_on) {
-		int err;
-
-		err = dk_set_led(DK_LED1, (int)led_is_on);
-		led_is_on = !led_is_on;
-
-		if (err) {
-			printk("Unable to set LED value (%d)\n", err);
-		}
-	}
-
-	k_delayed_work_submit(&blinking_work, K_MSEC(LED_INTERVAL));
-}
-
 static void microphone_handler(struct k_work *work)
 {
 	if (fft_analyzer_available()) {
 		fft_analyzer_read(spectrum, spectrum_size);
 		for (int i = 0; i < spectrum_size; i++) {
 			if (spectrum[i]) {
-				printk("NOT 0: %d\t%d\n",
-				       ((i * pdm_sampling_freq) / fft_size),
-				       spectrum[i]);
+				int frequency =
+					((i * pdm_sampling_freq) / fft_size);
+				printk("Frequency: %d\tAmplitude: %d\n",
+				       frequency, spectrum[i]);
+				if (frequency < 1200) {
+					gpio_port_set_bits_raw(io_expander,
+							       BIT(5) | BIT(7));
+					gpio_port_clear_bits_raw(io_expander,
+								 BIT(6));
+				} else if (frequency < 1500) {
+					gpio_port_set_bits_raw(io_expander,
+							       BIT(6) | BIT(7));
+					gpio_port_clear_bits_raw(io_expander,
+								 BIT(5));
+				} else if (frequency < 1800) {
+					gpio_port_set_bits_raw(io_expander,
+							       BIT(5) | BIT(6));
+					gpio_port_clear_bits_raw(io_expander,
+								 BIT(7));
+				}
+				break;
 			}
 		}
 	}
@@ -80,32 +75,30 @@ static void microphone_handler(struct k_work *work)
 
 static void button_handler_cb(u32_t pressed, u32_t changed)
 {
+	int err;
+
 	if ((pressed & BIT(0))) {
-		if (spkr_pwm != NULL) {
-			int err;
+		err = nrfx_err_code_check(nrfx_pdm_start());
 
-			if (button_toggled_on) {
-				err = gpio_pin_set_raw(spkr_pwr_ctrl, 29, 1);
-
-				if (err) {
-					printk("Could not set speaker power pin\n");
-					return;
-				} else {
-					printk("Speaker power on\n");
-				}
-			} else {
-				err = gpio_pin_set_raw(spkr_pwr_ctrl, 29, 0);
-
-				if (err) {
-					printk("Could not set speaker power pin\n");
-					return;
-				} else {
-					printk("Speaker power off\n");
-				}
-			}
+		if (err) {
+			printk("Error starting PDM\n");
+		} else {
+			printk("PDM started\n");
 		}
 
-		button_toggled_on = !button_toggled_on;
+		k_delayed_work_submit(&microphone_work, K_NO_WAIT);
+	} else if ((!pressed & BIT(0))) {
+		gpio_port_set_bits_raw(io_expander, BIT(5) | BIT(6) | BIT(7));
+
+		k_delayed_work_cancel(&microphone_work);
+
+		err = nrfx_err_code_check(nrfx_pdm_start());
+
+		if (err) {
+			printk("Error stopping PDM\n");
+		} else {
+			printk("PDM stopped\n");
+		}
 	}
 }
 
@@ -138,12 +131,34 @@ static void pdm_event_handler(nrfx_pdm_evt_t const *p_evt)
 
 static void button_and_led_init(void)
 {
-	k_delayed_work_init(&attention_blink_work, attention_blink);
-	k_delayed_work_init(&blinking_work, blinking_work_handler);
+	int err;
 
+	dk_buttons_init(NULL);
 	dk_button_handler_add(&button_handler);
 
-	k_delayed_work_submit(&blinking_work, K_MSEC(LED_INTERVAL));
+	io_expander = device_get_binding(DT_PROP(DT_NODELABEL(sx1509b), label));
+
+	if (io_expander == NULL) {
+		printk("Could not initiate I/O expander\n");
+	}
+
+	err = gpio_pin_configure(io_expander, 5, GPIO_OUTPUT);
+
+	if (err) {
+		printk("Could not configure green LED pin\n");
+	}
+
+	err = gpio_pin_configure(io_expander, 6, GPIO_OUTPUT);
+
+	if (err) {
+		printk("Could not configure blue LED pin\n");
+	}
+
+	err = gpio_pin_configure(io_expander, 7, GPIO_OUTPUT);
+
+	if (err) {
+		printk("Could not configure red LED pin\n");
+	}
 }
 
 static void chip_temp_sensor_init(void)
@@ -209,19 +224,13 @@ static void microphone_init(void)
 		printk("FFT analyzer configured\n");
 	}
 
-	io_expander = device_get_binding(DT_PROP(DT_NODELABEL(sx1509b), label));
+	err = gpio_pin_configure(io_expander, 9, GPIO_OUTPUT);
 
-	if (io_expander == NULL) {
-		printk("Could not initiate I/O expander\n");
+	if (err) {
+		printk("Could not configure speaker power pin\n");
+		return;
 	} else {
-		err = gpio_pin_configure(io_expander, 9, GPIO_OUTPUT);
-
-		if (err) {
-			printk("Could not configure speaker power pin\n");
-			return;
-		} else {
-			printk("Speaker power pin configured\n");
-		}
+		printk("Speaker power pin configured\n");
 	}
 
 	gpio_port_set_bits_raw(io_expander, BIT(9));
@@ -241,7 +250,6 @@ static void microphone_init(void)
 		printk("Error starting PDM\n");
 	} else {
 		k_delayed_work_init(&microphone_work, microphone_handler);
-		k_delayed_work_submit(&microphone_work, K_MSEC(200));
 		printk("PDM started\n");
 	}
 }
@@ -294,33 +302,32 @@ static struct bt_mesh_cfg_srv cfg_srv = {
 	.relay_retransmit = BT_MESH_TRANSMIT(2, 20),
 };
 
-/* Set up a repeating delayed work to blink the DK's LEDs when attention is
- * requested.
- */
-
-static void attention_blink(struct k_work *work)
+static void attention_on(struct bt_mesh_model *mod)
 {
 	int err;
 
-	err = dk_set_led(DK_LED1, (int)led_is_on);
-	led_is_on = !led_is_on;
+	err = gpio_pin_set_raw(spkr_pwr_ctrl, 29, 1);
 
 	if (err) {
-		printk("Unable to set LED value (%d)\n", err);
+		printk("Could not set speaker power pin\n");
+		return;
+	} else {
+		printk("Speaker power on\n");
 	}
-
-	k_delayed_work_submit(&attention_blink_work, K_MSEC(50));
-}
-
-static void attention_on(struct bt_mesh_model *mod)
-{
-	k_delayed_work_submit(&attention_blink_work, K_NO_WAIT);
 }
 
 static void attention_off(struct bt_mesh_model *mod)
 {
-	k_delayed_work_cancel(&attention_blink_work);
-	dk_set_leds(DK_NO_LEDS_MSK);
+	int err;
+
+	err = gpio_pin_set_raw(spkr_pwr_ctrl, 29, 0);
+
+	if (err) {
+		printk("Could not set speaker power pin\n");
+		return;
+	} else {
+		printk("Speaker power off\n");
+	}
 }
 
 static const struct bt_mesh_health_srv_cb health_srv_cb = {
