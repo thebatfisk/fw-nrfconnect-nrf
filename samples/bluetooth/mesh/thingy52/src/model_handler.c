@@ -14,19 +14,21 @@
 #define LED_INTERVAL 2000
 
 static struct device *chip_temp_sensor;
-static struct device *io_expander;
 
-static struct device *spkr_pwr_ctrl;
+static struct device *io_expander;
+static struct device *gpio_0;
+
 static struct device *spkr_pwm;
 static u32_t pwm_frequency = 880;
 
-const nrfx_pdm_config_t pdm_config = NRFX_PDM_DEFAULT_CONFIG(26, 25);
-static int16_t pdm_buffer_a[256];
-static int16_t pdm_buffer_b[256];
+nrfx_pdm_config_t pdm_config = NRFX_PDM_DEFAULT_CONFIG(26, 25);
 static const int pdm_sampling_freq = 16000;
 static const int fft_size = 256;
+static int16_t pdm_buffer_a[256];
+static int16_t pdm_buffer_b[256];
 static const int spectrum_size = fft_size / 2;
-int spectrum[128];
+static int spectrum[128];
+static int avg_freq;
 
 static struct k_delayed_work microphone_work;
 
@@ -39,34 +41,33 @@ static int nrfx_err_code_check(nrfx_err_t nrfx_err)
 	}
 }
 
-static void microphone_handler(struct k_work *work)
+static void microphone_work_handler(struct k_work *work)
 {
 	if (fft_analyzer_available()) {
+		int counter = 0;
+
 		fft_analyzer_read(spectrum, spectrum_size);
-		for (int i = 0; i < spectrum_size; i++) {
+
+		/* i = 8 for frequencies from 500 Hz and up */
+		for (int i = 8; i < spectrum_size; i++) {
 			if (spectrum[i]) {
-				int frequency =
-					((i * pdm_sampling_freq) / fft_size);
-				printk("Frequency: %d\tAmplitude: %d\n",
-				       frequency, spectrum[i]);
-				if (frequency < 1200) {
-					gpio_port_set_bits_raw(io_expander,
-							       BIT(5) | BIT(7));
-					gpio_port_clear_bits_raw(io_expander,
-								 BIT(6));
-				} else if (frequency < 1500) {
-					gpio_port_set_bits_raw(io_expander,
-							       BIT(6) | BIT(7));
-					gpio_port_clear_bits_raw(io_expander,
-								 BIT(5));
-				} else if (frequency < 1800) {
-					gpio_port_set_bits_raw(io_expander,
-							       BIT(5) | BIT(6));
-					gpio_port_clear_bits_raw(io_expander,
-								 BIT(7));
+				if (!counter) {
+					avg_freq = ((i * pdm_sampling_freq) /
+						    fft_size);
+				} else {
+					avg_freq = avg_freq +
+						   ((((i * pdm_sampling_freq) /
+						      fft_size) -
+						     avg_freq) /
+						    counter);
 				}
-				break;
+
+				counter++;
 			}
+		}
+
+		if (avg_freq) {
+			printk("Average frequency: %d\n", avg_freq);
 		}
 	}
 
@@ -78,6 +79,8 @@ static void button_handler_cb(u32_t pressed, u32_t changed)
 	int err;
 
 	if ((pressed & BIT(0))) {
+		gpio_port_set_bits_raw(io_expander, BIT(MIC_PWR));
+
 		err = nrfx_err_code_check(nrfx_pdm_start());
 
 		if (err) {
@@ -88,17 +91,21 @@ static void button_handler_cb(u32_t pressed, u32_t changed)
 
 		k_delayed_work_submit(&microphone_work, K_NO_WAIT);
 	} else if ((!pressed & BIT(0))) {
-		gpio_port_set_bits_raw(io_expander, BIT(5) | BIT(6) | BIT(7));
+		gpio_port_set_bits_raw(io_expander, BIT(GREEN_LED) |
+							    BIT(BLUE_LED) |
+							    BIT(RED_LED));
 
 		k_delayed_work_cancel(&microphone_work);
 
-		err = nrfx_err_code_check(nrfx_pdm_start());
+		err = nrfx_err_code_check(nrfx_pdm_stop());
 
 		if (err) {
 			printk("Error stopping PDM\n");
 		} else {
 			printk("PDM stopped\n");
 		}
+
+		gpio_port_clear_bits_raw(io_expander, BIT(MIC_PWR));
 	}
 }
 
@@ -116,13 +123,13 @@ static void pdm_event_handler(nrfx_pdm_evt_t const *p_evt)
 					    sizeof(pdm_buffer_a[0]));
 	} else if (p_evt->buffer_requested &&
 		   p_evt->buffer_released == pdm_buffer_a) {
-		fft_analyzer_update(pdm_buffer_a, 256);
+		fft_analyzer_update(pdm_buffer_a, fft_size);
 		nrfx_pdm_buffer_set(pdm_buffer_b,
 				    sizeof(pdm_buffer_b) /
 					    sizeof(pdm_buffer_b[0]));
 	} else if (p_evt->buffer_requested &&
 		   p_evt->buffer_released == pdm_buffer_b) {
-		fft_analyzer_update(pdm_buffer_b, 256);
+		fft_analyzer_update(pdm_buffer_b, fft_size);
 		nrfx_pdm_buffer_set(pdm_buffer_a,
 				    sizeof(pdm_buffer_a) /
 					    sizeof(pdm_buffer_a[0]));
@@ -142,19 +149,19 @@ static void button_and_led_init(void)
 		printk("Could not initiate I/O expander\n");
 	}
 
-	err = gpio_pin_configure(io_expander, 5, GPIO_OUTPUT);
+	err = gpio_pin_configure(io_expander, GREEN_LED, GPIO_OUTPUT);
 
 	if (err) {
 		printk("Could not configure green LED pin\n");
 	}
 
-	err = gpio_pin_configure(io_expander, 6, GPIO_OUTPUT);
+	err = gpio_pin_configure(io_expander, BLUE_LED, GPIO_OUTPUT);
 
 	if (err) {
 		printk("Could not configure blue LED pin\n");
 	}
 
-	err = gpio_pin_configure(io_expander, 7, GPIO_OUTPUT);
+	err = gpio_pin_configure(io_expander, RED_LED, GPIO_OUTPUT);
 
 	if (err) {
 		printk("Could not configure red LED pin\n");
@@ -179,14 +186,14 @@ static void speaker_init(void)
 	int err;
 	u32_t pwm_period = 1000000U / pwm_frequency;
 
-	spkr_pwr_ctrl = device_get_binding(DT_PROP(DT_NODELABEL(gpio0), label));
+	gpio_0 = device_get_binding(DT_PROP(DT_NODELABEL(gpio0), label));
 
-	if (spkr_pwr_ctrl == NULL) {
-		printk("Could not initiate speaker power control pin\n");
+	if (gpio_0 == NULL) {
+		printk("Could not initiate GPIO 0\n");
 		return;
 	}
 
-	err = gpio_pin_configure(spkr_pwr_ctrl, 29, GPIO_OUTPUT | GPIO_PULL_UP);
+	err = gpio_pin_configure(gpio_0, 29, GPIO_OUTPUT | GPIO_PULL_UP);
 
 	if (err) {
 		printk("Could not configure speaker power pin\n");
@@ -216,7 +223,7 @@ static void microphone_init(void)
 {
 	int err;
 
-	err = fft_analyzer_configure(256);
+	err = fft_analyzer_configure(fft_size);
 
 	if (err) {
 		printk("Error configuring FFT analyzer\n");
@@ -233,7 +240,9 @@ static void microphone_init(void)
 		printk("Speaker power pin configured\n");
 	}
 
-	gpio_port_set_bits_raw(io_expander, BIT(9));
+	gpio_port_set_bits_raw(io_expander, BIT(MIC_PWR));
+
+	pdm_config.gain_l = 70; // 80 (decimal) is max
 
 	err = nrfx_err_code_check(
 		nrfx_pdm_init(&pdm_config, pdm_event_handler));
@@ -244,14 +253,9 @@ static void microphone_init(void)
 		printk("PDM initiated\n");
 	}
 
-	err = nrfx_err_code_check(nrfx_pdm_start());
+	gpio_port_clear_bits_raw(io_expander, BIT(MIC_PWR));
 
-	if (err) {
-		printk("Error starting PDM\n");
-	} else {
-		k_delayed_work_init(&microphone_work, microphone_handler);
-		printk("PDM started\n");
-	}
+	k_delayed_work_init(&microphone_work, microphone_work_handler);
 }
 
 /** Sensor server */
@@ -306,7 +310,7 @@ static void attention_on(struct bt_mesh_model *mod)
 {
 	int err;
 
-	err = gpio_pin_set_raw(spkr_pwr_ctrl, 29, 1);
+	err = gpio_pin_set_raw(gpio_0, SPKR_PWR, 1);
 
 	if (err) {
 		printk("Could not set speaker power pin\n");
@@ -320,7 +324,7 @@ static void attention_off(struct bt_mesh_model *mod)
 {
 	int err;
 
-	err = gpio_pin_set_raw(spkr_pwr_ctrl, 29, 0);
+	err = gpio_pin_set_raw(gpio_0, SPKR_PWR, 0);
 
 	if (err) {
 		printk("Could not set speaker power pin\n");
