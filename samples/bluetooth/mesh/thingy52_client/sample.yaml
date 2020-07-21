@@ -1,8 +1,8 @@
 sample:
-  name: Bluetooth Mesh Thingy52
-  description: Bluetooth Mesh Thingy52
+  name: Bluetooth Mesh Thingy52 client
+  description: Bluetooth Mesh Thingy52 client
 tests:
-  samples.bluetooth.mesh.thingy52:
+  samples.bluetooth.mesh.thingy52_client:
     build_only: true
     build_on_all: true
     platform_whitelist: nrf52dk_nrf52832 nrf52840dk_nrf52840

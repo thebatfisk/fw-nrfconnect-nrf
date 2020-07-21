@@ -35,21 +35,11 @@ static void bt_ready(int err)
 	printk("Mesh initialized\n");
 }
 
-ISR_DIRECT_DECLARE(pdm_isr_handler)
-{
-	nrfx_pdm_irq_handler();
-	ISR_DIRECT_PM(); // PM done after servicing interrupt for best latency
-
-	return 1; // We should check if scheduling decision should be made
-}
-
 void main(void)
 {
 	int err;
 
 	printk("Initializing...\n");
-
-	IRQ_DIRECT_CONNECT(PDM_IRQn, 0, pdm_isr_handler, 0);
 
 	err = bt_enable(bt_ready);
 	if (err) {

@@ -11,10 +11,6 @@
 #include <dk_buttons_and_leds.h>
 #include "model_handler.h"
 
-#define LED_INTERVAL 2000
-
-static struct device *chip_temp_sensor;
-
 static struct device *io_expander;
 static struct device *gpio_0;
 
@@ -168,19 +164,6 @@ static void button_and_led_init(void)
 	}
 }
 
-static void chip_temp_sensor_init(void)
-{
-	chip_temp_sensor =
-		device_get_binding(DT_PROP(DT_NODELABEL(temp), label));
-
-	if (chip_temp_sensor == NULL) {
-		printk("Could not initiate temperature sensor\n");
-	} else {
-		printk("Temperature sensor (%s) initiated\n",
-		       chip_temp_sensor->name);
-	}
-}
-
 static void speaker_init(void)
 {
 	int err;
@@ -258,41 +241,6 @@ static void microphone_init(void)
 	k_delayed_work_init(&microphone_work, microphone_work_handler);
 }
 
-/** Sensor server */
-
-static int chip_temp_get(struct bt_mesh_sensor *sensor,
-			 struct bt_mesh_msg_ctx *ctx, struct sensor_value *rsp)
-{
-	int err;
-
-	sensor_sample_fetch(chip_temp_sensor);
-
-	err = sensor_channel_get(chip_temp_sensor, SENSOR_CHAN_DIE_TEMP, rsp);
-
-	if (err) {
-		printk("Error getting temperature sensor data (%d)\n", err);
-	}
-
-	return err;
-}
-
-static struct bt_mesh_sensor chip_temp = {
-	.type = &bt_mesh_sensor_present_dev_op_temp,
-	.get = chip_temp_get,
-};
-
-static struct bt_mesh_sensor presence_sensor = {
-	.type = &bt_mesh_sensor_presence_detected,
-};
-
-static struct bt_mesh_sensor *const sensors[] = {
-	&chip_temp,
-	&presence_sensor,
-};
-
-static struct bt_mesh_sensor_srv sensor_srv =
-	BT_MESH_SENSOR_SRV_INIT(sensors, ARRAY_SIZE(sensors));
-
 /** Configuration server definition */
 static struct bt_mesh_cfg_srv cfg_srv = {
 	.relay = IS_ENABLED(CONFIG_BT_MESH_RELAY),
@@ -349,8 +297,7 @@ static struct bt_mesh_elem elements[] = {
 	BT_MESH_ELEM(1,
 		     BT_MESH_MODEL_LIST(BT_MESH_MODEL_CFG_SRV(&cfg_srv),
 					BT_MESH_MODEL_HEALTH_SRV(&health_srv,
-								 &health_pub),
-					BT_MESH_MODEL_SENSOR_SRV(&sensor_srv)),
+								 &health_pub)),
 		     BT_MESH_MODEL_NONE),
 };
 
@@ -363,7 +310,6 @@ static const struct bt_mesh_comp comp = {
 const struct bt_mesh_comp *model_handler_init(void)
 {
 	button_and_led_init();
-	chip_temp_sensor_init();
 	speaker_init();
 	microphone_init();
 

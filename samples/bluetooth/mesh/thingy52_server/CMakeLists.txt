@@ -10,6 +10,5 @@ project(NONE)
 
 target_sources(app PRIVATE
 	src/main.c
-	src/model_handler.c
-	src/fft_analyzer.c)
+	src/model_handler.c)
 target_include_directories(app PRIVATE include)
