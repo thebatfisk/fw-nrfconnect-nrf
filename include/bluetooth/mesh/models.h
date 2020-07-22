@@ -46,6 +46,10 @@
 #include <bluetooth/mesh/light_ctrl_srv.h>
 #include <bluetooth/mesh/light_ctrl_cli.h>
 
+/* Vendor models */
+#include <bluetooth/mesh/whistle_srv.h>
+#include <bluetooth/mesh/whistle_cli.h>
+
 /** @brief Check whether the model publishes to a unicast address.
  *
  * @param[in] mod Model to check

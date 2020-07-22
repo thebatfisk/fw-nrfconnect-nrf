@@ -13,6 +13,38 @@ config BT_MESH_NRF_MODELS
 	  models.
 
 
+menuconfig BT_MESH_WHISTLE_SRV
+	bool "Whistle Server"
+	select BT_MESH_NRF_MODELS
+	help
+	  Enable Mesh Whistle Server vendor model.
+
+if BT_MESH_WHISTLE_SRV && BT_SETTINGS
+
+menuconfig BT_MESH_WHISTLE_SRV_RELAY
+	bool "Enable Whistle Server relaying"
+	default y
+	help
+	  Enables the Whistle Server to relay incoming lvl messages.
+
+if BT_MESH_WHISTLE_SRV_RELAY
+
+config BT_MESH_WHISTLE_SRV_RELAY_SCALE_FACTOR
+	int "Relay level scaling factor"
+	default 0
+	range -65535 65535
+	help
+	  Value to increase or decrease the incoming level value before relaying it.
+
+endif
+endif
+
+config BT_MESH_WHISTLE_CLI
+	bool "Whistle Client"
+	select BT_MESH_NRF_MODELS
+	help
+	  Enable Mesh Whistle Client vendor model.
+
 config BT_MESH_ONOFF_SRV
 	bool "Generic OnOff Server"
 	select BT_MESH_NRF_MODELS
@@ -24,7 +56,6 @@ config BT_MESH_ONOFF_CLI
 	select BT_MESH_NRF_MODELS
 	help
 	  Enable Mesh Generic OnOff Client model.
-
 
 config BT_MESH_LVL_SRV
 	bool "Generic Level Server"
