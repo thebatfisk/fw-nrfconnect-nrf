@@ -25,3 +25,5 @@ add_subdirectory_ifdef(CONFIG_MODEM_KEY_MGMT modem_key_mgmt)
 add_subdirectory_ifdef(CONFIG_SMS sms)
 add_subdirectory_ifdef(CONFIG_SUPL_CLIENT_LIB supl)
 add_subdirectory_ifdef(CONFIG_DATE_TIME date_time)
+add_subdirectory_ifdef(CONFIG_THINGY_ORIENT_HANDLER thingy52/orientation_handler)
+
