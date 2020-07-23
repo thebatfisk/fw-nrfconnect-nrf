@@ -1,0 +1,17 @@
+#
+# Copyright (c) 2020 Nordic Semiconductor
+#
+# SPDX-License-Identifier: LicenseRef-BSD-5-Clause-Nordic
+#
+
+menuconfig THINGY_ORIENT_HANDLER
+	bool "Accelerometer orientation handler Library for Nordic Thingy52 DK"
+	select GPIO
+
+if THINGY_ORIENT_HANDLER
+
+module = THINGY_ORIENT_HANDLER
+module-str = thingy52 accelerometer orientation handler
+source "${ZEPHYR_BASE}/subsys/logging/Kconfig.template.log_config"
+
+endif # DK_LIBRARY
