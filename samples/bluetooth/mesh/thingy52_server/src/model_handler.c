@@ -7,6 +7,7 @@
 #include <bluetooth/bluetooth.h>
 #include <bluetooth/mesh/models.h>
 #include <drivers/gpio.h>
+#include <drivers/gpio/gpio_sx1509b.h>
 #include <drivers/pwm.h>
 #include <dk_buttons_and_leds.h>
 #include "model_handler.h"
@@ -17,33 +18,75 @@ static struct device *gpio_0;
 static struct device *spkr_pwm;
 static u32_t pwm_frequency = 880;
 
+static struct k_delayed_work led_pwm_work;
+static uint8_t pwm_val;
+static uint8_t choose_led = RED_LED;
+
+static void led_pwm_work_handler(struct k_work *work)
+{
+	int err;
+
+	pwm_val++;
+
+	if (pwm_val >= 255) {
+		pwm_val = 0;
+
+		err = sx1509b_set_pwm(io_expander, choose_led, 0);
+
+		if (err) {
+			printk("Error setting PWM\n");
+		}
+
+		if (choose_led == RED_LED) {
+			choose_led = GREEN_LED;
+		} else if (choose_led == GREEN_LED) {
+			choose_led = BLUE_LED;
+		} else {
+			choose_led = RED_LED;
+		}
+	}
+
+	err = sx1509b_set_pwm(io_expander, choose_led, pwm_val);
+
+	if (err) {
+		printk("Error setting PWM\n");
+	}
+
+	k_delayed_work_submit(&led_pwm_work, K_MSEC(20));
+}
+
 static void led_init(void)
 {
 	int err;
 
-	io_expander = device_get_binding(DT_PROP(DT_NODELABEL(sx1509b), label));
-
-	if (io_expander == NULL) {
-		printk("Could not initiate I/O expander\n");
-	}
-
-	err = gpio_pin_configure(io_expander, GREEN_LED, GPIO_OUTPUT);
+	err = sx1509b_led_drv_init(io_expander);
 
 	if (err) {
-		printk("Could not configure green LED pin\n");
+		printk("Error initiating SX1509B LED driver\n");
+		return;
+	} else {
+		printk("SX1509B LED driver initiated\n");
 	}
 
-	err = gpio_pin_configure(io_expander, BLUE_LED, GPIO_OUTPUT);
+	/* GREEN_LED = 5, BLUE_LED = 6, RED_LED = 7 */
+	for (int i = 5; i <= 7; i++) {
+		err = sx1509b_set_pwm(io_expander, i, 0);
 
-	if (err) {
-		printk("Could not configure blue LED pin\n");
+		if (err) {
+			printk("Error setting PWM\n");
+		}
+
+		err = sx1509b_led_drv_pin_init(io_expander, i);
+
+		if (err) {
+			printk("Error initiating SX1509B LED driver pin %d\n",
+			       i);
+			return;
+		}
 	}
 
-	err = gpio_pin_configure(io_expander, RED_LED, GPIO_OUTPUT);
-
-	if (err) {
-		printk("Could not configure red LED pin\n");
-	}
+	k_delayed_work_init(&led_pwm_work, led_pwm_work_handler);
+	k_delayed_work_submit(&led_pwm_work, K_NO_WAIT);
 }
 
 static void speaker_init(void)
@@ -51,29 +94,11 @@ static void speaker_init(void)
 	int err;
 	u32_t pwm_period = 1000000U / pwm_frequency;
 
-	gpio_0 = device_get_binding(DT_PROP(DT_NODELABEL(gpio0), label));
-
-	if (gpio_0 == NULL) {
-		printk("Could not initiate GPIO 0\n");
-		return;
-	}
-
 	err = gpio_pin_configure(gpio_0, 29, GPIO_OUTPUT | GPIO_PULL_UP);
 
 	if (err) {
 		printk("Could not configure speaker power pin\n");
 		return;
-	} else {
-		printk("Speaker power pin configured\n");
-	}
-
-	spkr_pwm = device_get_binding(DT_PROP(DT_NODELABEL(pwm0), label));
-
-	if (spkr_pwm == NULL) {
-		printk("Could not initiate speaker PWM\n");
-		return;
-	} else {
-		printk("Speaker PWM (%s) initiated\n", spkr_pwm->name);
 	}
 
 	err = pwm_pin_set_usec(spkr_pwm, 27, pwm_period, pwm_period / 2U, 0);
@@ -107,7 +132,7 @@ static void attention_on(struct bt_mesh_model *mod)
 		printk("Could not set speaker power pin\n");
 		return;
 	} else {
-		printk("Speaker power on\n");
+		printk("Attention: Speaker power on\n");
 	}
 }
 
@@ -121,7 +146,7 @@ static void attention_off(struct bt_mesh_model *mod)
 		printk("Could not set speaker power pin\n");
 		return;
 	} else {
-		printk("Speaker power off\n");
+		printk("Attention: Speaker power off\n");
 	}
 }
 
@@ -152,6 +177,27 @@ static const struct bt_mesh_comp comp = {
 
 const struct bt_mesh_comp *model_handler_init(void)
 {
+	gpio_0 = device_get_binding(DT_PROP(DT_NODELABEL(gpio0), label));
+
+	if (gpio_0 == NULL) {
+		printk("Could not initiate GPIO 0\n");
+		return &comp;
+	}
+
+	spkr_pwm = device_get_binding(DT_PROP(DT_NODELABEL(pwm0), label));
+
+	if (spkr_pwm == NULL) {
+		printk("Could not initiate speaker PWM\n");
+		return &comp;
+	}
+
+	io_expander = device_get_binding(DT_PROP(DT_NODELABEL(sx1509b), label));
+
+	if (io_expander == NULL) {
+		printk("Could not initiate I/O expander\n");
+		return &comp;
+	}
+
 	led_init();
 	speaker_init();
 
