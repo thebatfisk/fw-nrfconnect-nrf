@@ -51,6 +51,13 @@ struct bt_mesh_whistle_cli {
 	struct bt_mesh_model *model;
 };
 
+int bt_mesh_whistle_cli_attention_set(struct bt_mesh_whistle_cli *cli,
+				      struct bt_mesh_msg_ctx *ctx, bool onoff);
+
+int bt_mesh_whistle_cli_rgb_set(struct bt_mesh_whistle_cli *cli,
+				struct bt_mesh_msg_ctx *ctx,
+				struct bt_mesh_whistle_rgb_msg *rgb);
+
 int bt_mesh_whistle_cli_lvl_set(struct bt_mesh_whistle_cli *cli,
 				struct bt_mesh_msg_ctx *ctx, uint16_t lvl);
 

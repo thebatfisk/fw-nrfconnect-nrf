@@ -19,11 +19,11 @@ struct bt_mesh_whistle_srv;
  *
  * @brief Init parameters for a @ref bt_mesh_whistle_srv instance.
  *
- * @param[in] _handler Level handler to use in the model instance.
+ * @param[in] _cb_handlers Level handler to use in the model instance.
  */
-#define BT_MESH_WHISTLE_SRV_INIT(_handler)                                     \
+#define BT_MESH_WHISTLE_SRV_INIT(_cb_handlers)                                 \
 	{                                                                      \
-		.lvl_set_handler = _handler,                                   \
+		.msg_callbacks = _cb_handlers,                                 \
 		.pub = {                                                       \
 			.msg = NET_BUF_SIMPLE(BT_MESH_MODEL_BUF_LEN(           \
 				BT_MESH_ONOFF_OP_STATUS,                       \
@@ -44,15 +44,34 @@ struct bt_mesh_whistle_srv;
 						 _srv),                        \
 			 &_bt_mesh_whistle_srv_cb)
 
+struct bt_mesh_whistle_cb {
+	/** Attention message handler. */
+	void (*const attention_set_handler)(struct bt_mesh_whistle_srv *srv,
+					    struct bt_mesh_msg_ctx *ctx,
+					    bool onoff);
+
+	/** Level message handler. */
+	void (*const lvl_set_handler)(struct bt_mesh_whistle_srv *srv,
+				      struct bt_mesh_msg_ctx *ctx,
+				      uint16_t lvl);
+
+	/** RGB message handler. */
+	void (*const rgb_set_handler)(struct bt_mesh_whistle_srv *srv,
+				      struct bt_mesh_msg_ctx *ctx,
+				      struct bt_mesh_whistle_rgb_msg rgb);
+};
+
 /**
  * Whistle Server instance. Should primarily be initialized with the
  * @ref BT_MESH_WHISTLE_SRV_INIT macro.
  */
 struct bt_mesh_whistle_srv {
-	/** Handler function. */
-	void (*const lvl_set_handler)(struct bt_mesh_whistle_srv *srv,
-				      struct bt_mesh_msg_ctx *ctx,
-				      uint16_t lvl);
+	/** Message callbacks */
+	struct bt_mesh_whistle_cb *msg_callbacks;
+
+	/** Attention state */
+	bool attention_state;
+
 	/** Access model pointer. */
 	struct bt_mesh_model *model;
 	/** Publish parameters. */

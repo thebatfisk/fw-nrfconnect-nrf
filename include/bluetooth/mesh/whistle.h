@@ -13,13 +13,23 @@
 extern "C" {
 #endif
 
+struct bt_mesh_whistle_rgb_msg {
+	uint8_t red;
+	uint8_t green;
+	uint8_t blue;
+};
+
 /** @cond INTERNAL_HIDDEN */
 #define BT_MESH_MODEL_ID_WHISTLE_SRV 0x0005
 #define BT_MESH_MODEL_ID_WHISTLE_CLI 0x0006
 
+#define BT_MESH_WHISTLE_OP_ATTENTION_SET BT_MESH_MODEL_OP_2(0x82, 0xFC)
+#define BT_MESH_WHISTLE_OP_RGB_SET BT_MESH_MODEL_OP_2(0x82, 0xFD)
 #define BT_MESH_WHISTLE_OP_LVL_SET BT_MESH_MODEL_OP_2(0x82, 0xFE)
 #define BT_MESH_WHISTLE_OP_LVL_RELAY BT_MESH_MODEL_OP_2(0x82, 0xFF)
 
+#define BT_MESH_WHISTLE_MSG_LEN_ATTENTION_SET 1
+#define BT_MESH_WHISTLE_MSG_LEN_RGB_SET 3
 #define BT_MESH_WHISTLE_MSG_LEN_SET 2
 
 /** @endcond */
