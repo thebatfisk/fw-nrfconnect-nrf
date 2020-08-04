@@ -22,8 +22,8 @@ struct bt_mesh_whistle_cli;
 #define BT_MESH_WHISTLE_CLI_INIT                                               \
 	{                                                                      \
 		.pub = {.msg = NET_BUF_SIMPLE(BT_MESH_MODEL_BUF_LEN(           \
-				BT_MESH_WHISTLE_OP_LVL_SET,                    \
-				BT_MESH_WHISTLE_MSG_LEN_SET)) }                \
+				BT_MESH_WHISTLE_OP_RGB_SET,                    \
+				BT_MESH_WHISTLE_MSG_LEN_RGB_SET)) }            \
 	}
 
 /** @def BT_MESH_MODEL_WHISTLE_CLI
@@ -52,15 +52,9 @@ struct bt_mesh_whistle_cli {
 	struct bt_mesh_model *model;
 };
 
-int bt_mesh_whistle_cli_attention_set(struct bt_mesh_whistle_cli *cli,
-				      struct bt_mesh_msg_ctx *ctx, bool onoff);
-
 int bt_mesh_whistle_cli_rgb_set(struct bt_mesh_whistle_cli *cli,
 				struct bt_mesh_msg_ctx *ctx,
 				struct bt_mesh_whistle_rgb_msg *rgb);
-
-int bt_mesh_whistle_cli_lvl_set(struct bt_mesh_whistle_cli *cli,
-				struct bt_mesh_msg_ctx *ctx, uint16_t lvl);
 
 /** @cond INTERNAL_HIDDEN */
 extern const struct bt_mesh_model_cb _bt_mesh_whistle_cli_cb;

@@ -45,20 +45,16 @@ struct bt_mesh_whistle_srv;
 		&_bt_mesh_whistle_srv_cb)
 
 struct bt_mesh_whistle_cb {
-	/** Attention message handler. */
-	void (*const attention_set_handler)(struct bt_mesh_whistle_srv *srv,
-					    struct bt_mesh_msg_ctx *ctx,
-					    bool onoff);
-
-	/** Level message handler. */
-	void (*const lvl_set_handler)(struct bt_mesh_whistle_srv *srv,
-				      struct bt_mesh_msg_ctx *ctx,
-				      uint16_t lvl);
-
 	/** RGB message handler. */
 	void (*const rgb_set_handler)(struct bt_mesh_whistle_srv *srv,
 				      struct bt_mesh_msg_ctx *ctx,
 				      struct bt_mesh_whistle_rgb_msg rgb);
+};
+
+struct bt_mesh_whistle_rgb_work_ctx {
+	uint16_t delay;
+	struct bt_mesh_whistle_rgb_msg rgb;
+	struct k_delayed_work work;
 };
 
 /**
@@ -68,15 +64,15 @@ struct bt_mesh_whistle_cb {
 struct bt_mesh_whistle_srv {
 	/** Message callbacks */
 	struct bt_mesh_whistle_cb *msg_callbacks;
-
-	/** Attention state */
-	bool attention_state;
-
 	/** Access model pointer. */
 	struct bt_mesh_model *model;
 	/** Publish parameters. */
 	struct bt_mesh_model_pub pub;
 };
+
+int bt_mesh_whistle_srv_rgb_set(struct bt_mesh_whistle_srv *srv,
+				struct bt_mesh_msg_ctx *ctx,
+				struct bt_mesh_whistle_rgb_msg *rgb);
 
 /** @cond INTERNAL_HIDDEN */
 extern const struct bt_mesh_model_op _bt_mesh_whistle_srv_op[];
