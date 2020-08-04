@@ -3,31 +3,31 @@
 Bluetooth: Mesh sensor client
 ###############################
 
-The Bluetooth Mesh sensor client sample demonstrates how to set up a basic Bluetooth Mesh :ref:`bt_mesh_sensor_cli_readme` model application that gets sensor data from one :ref:`bt_mesh_sensor_srv_readme` model.
+The Bluetooth Mesh sensor client sample demonstrates how to set up a basic Bluetooth Mesh :ref:`sensor client <bt_mesh_sensor_cli_readme>` model application that gets sensor data from one :ref:`sensor server <bt_mesh_sensor_srv_readme>` model.
 
 .. note::
     This sample must be paired with :ref:`bluetooth_mesh_sensor_server` to show any functionality. A client has no sensor data and is dependent on a server to provide it.
 
 Four Mesh sensor types are used in this sample:
 
-1. :cpp:var:`bt_mesh_sensor_present_dev_op_temp` - Published by the server according to its publishing period.
-#. :cpp:var:`bt_mesh_sensor_rel_runtime_in_a_dev_op_temp_range` - Periodically requested by the client.
-#. :cpp:var:`bt_mesh_sensor_presence_detected` - Published when a button is pressed on the server board.
-#. :cpp:var:`bt_mesh_sensor_time_since_presence_detected` - Periodically requested by the client and published by the server according to its publishing period.
+1. :cpp:var:`bt_mesh_sensor_present_dev_op_temp` - Published by the server according to its publishing period
+#. :cpp:var:`bt_mesh_sensor_rel_runtime_in_a_dev_op_temp_range` - Periodically requested by the client
+#. :cpp:var:`bt_mesh_sensor_presence_detected` - Published when a button is pressed on the server board
+#. :cpp:var:`bt_mesh_sensor_time_since_presence_detected` - Periodically requested by the client and published by the server according to its publishing period
 
 Overview
 ********
 
 This sample is split into two source files:
 
-* A :file:`main.c` file to handle initialization.
-* One additional file for handling Mesh models, :file:`model_handler.c`.
+* A :file:`main.c` file to handle initialization
+* One additional file for handling Mesh models, :file:`model_handler.c`
 
 Provisioning
 ============
 
-The provisioning is handled by the :ref:`bt_mesh_dk_prov`, and can be done with the `nRF Mesh mobile app`_.
-It is also possible to configure models with the app.
+The provisioning is handled by the :ref:`bt_mesh_dk_prov`.
+Use `nRF Mesh mobile app`_ for provisioning and configuring of models supported by the sample.
 
 Models
 ======
@@ -95,8 +95,8 @@ Testing
    The Mesh sensor client sample cannot demonstrate any functionality on its own, and needs a device with the :ref:`bluetooth_mesh_sensor_server` sample running in the same mesh network.
    Before testing the Mesh sensor client, go through the Mesh sensor server's :ref:`testing guide <bluetooth_mesh_sensor_server_testing>` with a different board.
 
-After programming the sample to your board, you can test the device by provisioning and configuring it for communication trough the Mesh models.
-This can be done using a smartphone with Nordic Semiconductor's nRF Mesh app installed.
+After programming the sample to your board, you can test it by using a smartphone with Nordic Semiconductor’s nRF Mesh app installed.
+Testing consists of provisioning the device and configuring it for communication with the mesh models.
 
 All sensor values gathered from the server are printed over UART.
 For more details, see :ref:`gs_testing`.
@@ -120,7 +120,7 @@ Configuring models
 Complete the following steps in the nRF Mesh app to configure models:
 
 1. On the Network screen, tap the :guilabel:`Mesh Sensor Client` node.
-   Basic information about the Mesh node and its configuration is displayed.
+   Basic information about the mesh node and its configuration is displayed.
 #. In the Mesh node view, expand the element.
    It contains the list of models in the first and only element of the node.
 #. Tap :guilabel:`Sensor Client` to see the model's configuration.
@@ -133,18 +133,18 @@ Complete the following steps in the nRF Mesh app to configure models:
 
    1. Tap :guilabel:`SET PUBLICATION`.
    #. Tap :guilabel:`Publish Address`.
-   #. Choose Groups from the drop-down menu.
-   #. Choose an existing group or create a new.
-         The sensor server must subscribe to the same grop.
+   #. Select Groups from the drop-down menu.
+   #. Select an existing group or create a new.
+         The sensor server must subscribe to the same group.
    #. Tap :guilabel:`OK`.
    #. Retransmit Count should be 0 to avoid duplicate logging in the UART terminal.
-   #. Press the :guilabel:`check button` at the bottom right corner.
+   #. Tap the :guilabel:`check button` at the bottom right corner.
 
 #. Set subscription parameters:
 
    1. Tap :guilabel:`SUBSCRIBE`.
-   #. Choose an existing group or create a new.
-         The sensor server must publish to the same grop.
+   #. Select an existing group or create a new.
+         The sensor server must publish to the same group.
    #. Tap :guilabel:`OK`.
 
 #. Tap the :guilabel:`back arrow` at the top left corner.
