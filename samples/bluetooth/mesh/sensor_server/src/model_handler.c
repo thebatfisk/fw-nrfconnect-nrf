@@ -61,7 +61,8 @@ static int relative_runtime_in_chip_temp_get(
 {
 	if (tot_temp_samps) {
 		int32_t index = column - &columns[0];
-		uint8_t percent_steps = (200 * col_samps[index]) / tot_temp_samps;
+		uint8_t percent_steps =
+			(200 * col_samps[index]) / tot_temp_samps;
 
 		value[0].val1 = percent_steps / 2;
 		value[0].val2 = (percent_steps % 2) * 500000;
