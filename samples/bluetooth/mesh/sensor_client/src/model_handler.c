@@ -38,7 +38,7 @@ static void sensor_cli_data_cb(struct bt_mesh_sensor_cli *cli,
 
 static void sensor_cli_series_entry_cb(
 	struct bt_mesh_sensor_cli *cli, struct bt_mesh_msg_ctx *ctx,
-	const struct bt_mesh_sensor_type *sensor, u8_t index, u8_t count,
+	const struct bt_mesh_sensor_type *sensor, uint8_t index, uint8_t count,
 	const struct bt_mesh_sensor_series_entry *entry)
 {
 	printk("Relative runtime in %d to %d degrees: %s percent\n",
@@ -101,7 +101,7 @@ static struct k_delayed_work attention_blink_work;
 static void attention_blink(struct k_work *work)
 {
 	static int idx;
-	const u8_t pattern[] = {
+	const uint8_t pattern[] = {
 		BIT(0) | BIT(1),
 		BIT(1) | BIT(2),
 		BIT(2) | BIT(3),

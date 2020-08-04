@@ -20,10 +20,10 @@ static const struct bt_mesh_sensor_column columns[] = {
 };
 
 static struct device *dev;
-static u32_t tot_temp_samps;
-static u32_t col_samps[ARRAY_SIZE(columns)];
+static uint32_t tot_temp_samps;
+static uint32_t col_samps[ARRAY_SIZE(columns)];
 
-static s32_t prev_pres;
+static int32_t prev_pres;
 
 static int chip_temp_get(struct bt_mesh_sensor *sensor,
 			 struct bt_mesh_msg_ctx *ctx, struct sensor_value *rsp)
@@ -60,8 +60,8 @@ static int relative_runtime_in_chip_temp_get(
 	const struct bt_mesh_sensor_column *column, struct sensor_value *value)
 {
 	if (tot_temp_samps) {
-		s32_t index = column - &columns[0];
-		u8_t percent_steps = (200 * col_samps[index]) / tot_temp_samps;
+		int32_t index = column - &columns[0];
+		uint8_t percent_steps = (200 * col_samps[index]) / tot_temp_samps;
 
 		value[0].val1 = percent_steps / 2;
 		value[0].val2 = (percent_steps % 2) * 500000;
@@ -137,7 +137,7 @@ static void end_of_presence(struct k_work *work)
 	}
 }
 
-static void button_handler_cb(u32_t pressed, u32_t changed)
+static void button_handler_cb(uint32_t pressed, uint32_t changed)
 {
 	if ((pressed & BIT(0))) {
 		int err;
@@ -187,7 +187,7 @@ static struct k_delayed_work attention_blink_work;
 static void attention_blink(struct k_work *work)
 {
 	static int idx;
-	const u8_t pattern[] = {
+	const uint8_t pattern[] = {
 		BIT(0) | BIT(1),
 		BIT(1) | BIT(2),
 		BIT(2) | BIT(3),
