@@ -59,15 +59,6 @@ static void led_init(void)
 {
 	int err;
 
-	err = sx1509b_led_drv_init(io_expander);
-
-	if (err) {
-		printk("Error initiating SX1509B LED driver\n");
-		return;
-	} else {
-		printk("SX1509B LED driver initiated\n");
-	}
-
 	/* GREEN_LED = 5, BLUE_LED = 6, RED_LED = 7 */
 	for (int i = 5; i <= 7; i++) {
 		err = sx1509b_set_pwm(io_expander, i, 0);

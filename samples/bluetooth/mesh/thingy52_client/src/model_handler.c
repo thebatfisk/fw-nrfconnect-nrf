@@ -80,7 +80,7 @@ static void button_handler_cb(u32_t pressed, u32_t changed)
 	int err;
 
 	if ((pressed & BIT(0))) {
-		gpio_port_set_bits_raw(io_expander, BIT(MIC_PWR));
+		sx1509b_gpio_pin_onoff(io_expander, MIC_PWR, 1);
 
 		err = nrfx_err_code_check(nrfx_pdm_start());
 
@@ -102,7 +102,7 @@ static void button_handler_cb(u32_t pressed, u32_t changed)
 			printk("PDM stopped\n");
 		}
 
-		gpio_port_clear_bits_raw(io_expander, BIT(MIC_PWR));
+		sx1509b_gpio_pin_onoff(io_expander, MIC_PWR, 0);
 	}
 }
 
@@ -173,15 +173,6 @@ static void button_and_led_init(void)
 	dk_buttons_init(NULL);
 	dk_button_handler_add(&button_handler);
 
-	err = sx1509b_led_drv_init(io_expander);
-
-	if (err) {
-		printk("Error initiating SX1509B LED driver\n");
-		return;
-	} else {
-		printk("SX1509B LED driver initiated\n");
-	}
-
 	/* GREEN_LED = 5, BLUE_LED = 6, RED_LED = 7 */
 	for (int i = 5; i <= 7; i++) {
 		err = sx1509b_set_pwm(io_expander, i, 0);
@@ -235,14 +226,14 @@ static void microphone_init(void)
 		printk("FFT analyzer configured\n");
 	}
 
-	err = gpio_pin_configure(io_expander, 9, GPIO_OUTPUT);
+	err = sx1509b_gpio_output_pin_init(io_expander, MIC_PWR);
 
 	if (err) {
 		printk("Could not configure microphone power pin\n");
 		return;
 	}
 
-	gpio_port_set_bits_raw(io_expander, BIT(MIC_PWR));
+	sx1509b_gpio_pin_onoff(io_expander, MIC_PWR, 1);
 
 	pdm_config.gain_l = 70; // 80 (decimal) is max
 
@@ -255,7 +246,7 @@ static void microphone_init(void)
 		printk("PDM initiated\n");
 	}
 
-	gpio_port_clear_bits_raw(io_expander, BIT(MIC_PWR));
+	sx1509b_gpio_pin_onoff(io_expander, MIC_PWR, 0);
 
 	k_delayed_work_init(&microphone_work, microphone_work_handler);
 }
