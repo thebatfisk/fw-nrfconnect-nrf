@@ -38,11 +38,11 @@ struct bt_mesh_whistle_srv;
  * @param[in] _srv Pointer to a @ref bt_mesh_whistle_srv instance.
  */
 #define BT_MESH_MODEL_WHISTLE_SRV(_srv)                                        \
-	BT_MESH_MODEL_CB(BT_MESH_MODEL_ID_GEN_ONOFF_SRV,                       \
-			 _bt_mesh_whistle_srv_op, &(_srv)->pub,                \
-			 BT_MESH_MODEL_USER_DATA(struct bt_mesh_whistle_srv,   \
-						 _srv),                        \
-			 &_bt_mesh_whistle_srv_cb)
+	BT_MESH_MODEL_VND_CB(                                                  \
+		BT_MESH_NORDIC_SEMI_COMPANY_ID, BT_MESH_MODEL_ID_WHISTLE_SRV,  \
+		_bt_mesh_whistle_srv_op, &(_srv)->pub,                         \
+		BT_MESH_MODEL_USER_DATA(struct bt_mesh_whistle_srv, _srv),     \
+		&_bt_mesh_whistle_srv_cb)
 
 struct bt_mesh_whistle_cb {
 	/** Attention message handler. */
