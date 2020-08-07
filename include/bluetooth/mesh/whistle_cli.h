@@ -33,10 +33,11 @@ struct bt_mesh_whistle_cli;
  * @param[in] _cli Pointer to a @ref bt_mesh_whistle_cli instance.
  */
 #define BT_MESH_MODEL_WHISTLE_CLI(_cli)                                        \
-	BT_MESH_MODEL_CB(BT_MESH_MODEL_ID_GEN_ONOFF_CLI, NULL, &(_cli)->pub,   \
-			 BT_MESH_MODEL_USER_DATA(struct bt_mesh_whistle_cli,   \
-						 _cli),                        \
-			 &_bt_mesh_whistle_cli_cb)
+	BT_MESH_MODEL_VND_CB(                                                  \
+		BT_MESH_NORDIC_SEMI_COMPANY_ID, BT_MESH_MODEL_ID_WHISTLE_CLI,  \
+		NULL, &(_cli)->pub,                                            \
+		BT_MESH_MODEL_USER_DATA(struct bt_mesh_whistle_cli, _cli),     \
+		&_bt_mesh_whistle_cli_cb)
 
 /**
  * Whistle Client structure.
