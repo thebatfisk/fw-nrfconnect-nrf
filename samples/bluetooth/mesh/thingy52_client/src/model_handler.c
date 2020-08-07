@@ -80,7 +80,6 @@ static void button_handler_cb(u32_t pressed, u32_t changed)
 	int err;
 
 	if ((pressed & BIT(0))) {
-		sx1509b_gpio_pin_onoff(io_expander, MIC_PWR, 1);
 
 		err = nrfx_err_code_check(nrfx_pdm_start());
 
@@ -102,7 +101,6 @@ static void button_handler_cb(u32_t pressed, u32_t changed)
 			printk("PDM stopped\n");
 		}
 
-		sx1509b_gpio_pin_onoff(io_expander, MIC_PWR, 0);
 	}
 }
 
@@ -142,7 +140,6 @@ static void led_pwm_work_handler(struct k_work *work)
 	if (pwm_val >= 255) {
 		pwm_val = 0;
 
-		err = sx1509b_set_pwm(io_expander, choose_led, 0);
 
 		if (err) {
 			printk("Error setting PWM\n");
@@ -157,7 +154,6 @@ static void led_pwm_work_handler(struct k_work *work)
 		}
 	}
 
-	err = sx1509b_set_pwm(io_expander, choose_led, pwm_val);
 
 	if (err) {
 		printk("Error setting PWM\n");
@@ -175,13 +171,11 @@ static void button_and_led_init(void)
 
 	/* GREEN_LED = 5, BLUE_LED = 6, RED_LED = 7 */
 	for (int i = 5; i <= 7; i++) {
-		err = sx1509b_set_pwm(io_expander, i, 0);
 
 		if (err) {
 			printk("Error setting PWM\n");
 		}
 
-		err = sx1509b_led_drv_pin_init(io_expander, i);
 
 		if (err) {
 			printk("Error initiating SX1509B LED driver pin %d\n",
@@ -226,14 +220,12 @@ static void microphone_init(void)
 		printk("FFT analyzer configured\n");
 	}
 
-	err = sx1509b_gpio_output_pin_init(io_expander, MIC_PWR);
 
 	if (err) {
 		printk("Could not configure microphone power pin\n");
 		return;
 	}
 
-	sx1509b_gpio_pin_onoff(io_expander, MIC_PWR, 1);
 
 	pdm_config.gain_l = 70; // 80 (decimal) is max
 
@@ -246,7 +238,6 @@ static void microphone_init(void)
 		printk("PDM initiated\n");
 	}
 
-	sx1509b_gpio_pin_onoff(io_expander, MIC_PWR, 0);
 
 	k_delayed_work_init(&microphone_work, microphone_work_handler);
 }
@@ -319,6 +310,8 @@ static const struct bt_mesh_comp comp = {
 
 const struct bt_mesh_comp *model_handler_init(void)
 {
+	int err;
+
 	gpio_0 = device_get_binding(DT_PROP(DT_NODELABEL(gpio0), label));
 
 	if (gpio_0 == NULL) {
@@ -340,9 +333,17 @@ const struct bt_mesh_comp *model_handler_init(void)
 		return &comp;
 	}
 
-	button_and_led_init();
-	speaker_init();
-	microphone_init();
+	// button_and_led_init();
+	// speaker_init();
+	// microphone_init();
+
+	err = sx1509b_pin_configure(io_expander, 14, SX1509B_OUTPUT);
+
+	printk("CONFIG ERR: %d\n", err);
+
+	err = sx1509b_set_pin_value(io_expander, 14, 0);
+
+	printk("SET PIN ERR: %d\n", err);
 
 	return &comp;
 }
