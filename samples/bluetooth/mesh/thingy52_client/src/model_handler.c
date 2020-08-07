@@ -337,11 +337,23 @@ const struct bt_mesh_comp *model_handler_init(void)
 	// speaker_init();
 	// microphone_init();
 
-	err = sx1509b_pin_configure(io_expander, 14, SX1509B_OUTPUT);
+	err = sx1509b_pin_configure(io_expander, 6, SX1509B_PWM);
+	err = sx1509b_pin_configure(io_expander, 13, SX1509B_OUTPUT);
+
+	err = sx1509b_pin_configure(io_expander, 15, SX1509B_INPUT);
 
 	printk("CONFIG ERR: %d\n", err);
 
-	err = sx1509b_set_pin_value(io_expander, 14, 0);
+	// err = sx1509b_set_pin_value(io_expander, 15, 1);
+
+	sx1509b_led_set_pwm_value(io_expander, 6, 255);
+	sx1509b_set_pin_value(io_expander, 13, 0);
+
+	uint8_t val = 57;
+
+	int test_rc = sx1509b_read_pin_value(io_expander, 15, &val);
+
+	printk("test_rc: %d - val: %d\n", test_rc, val);
 
 	printk("SET PIN ERR: %d\n", err);
 
