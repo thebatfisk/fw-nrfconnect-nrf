@@ -13,89 +13,97 @@
 #include <thingy52_orientation_handler.h>
 #include "model_handler.h"
 
-
 #define PDM_SAMPLING_FREQ 16000
 #define FFT_SIZE 256
 #define SPECTRUM_SIZE (FFT_SIZE / 2)
 #define SPEAKER_PWM_FREQ 880
 
 struct devices {
-        struct device *io_expander;
-        struct device *gpio_0;
-        struct device *spkr_pwm;
+	struct device *io_expander;
+	struct device *gpio_0;
+	struct device *spkr_pwm;
 };
 static struct devices dev;
 
 struct mic_config {
-        nrfx_pdm_config_t pdm_config;
-        int16_t pdm_buffer_a[256];
-        int16_t pdm_buffer_b[256];
-        struct k_delayed_work microphone_work;
+	nrfx_pdm_config_t pdm_config;
+	int16_t pdm_buffer_a[256];
+	int16_t pdm_buffer_b[256];
+	struct k_delayed_work microphone_work;
 };
 static struct mic_config mic_cfg = {
-        .pdm_config = NRFX_PDM_DEFAULT_CONFIG(26, 25),
+	.pdm_config = NRFX_PDM_DEFAULT_CONFIG(26, 25),
 };
 
 static inline int nrfx_err_code_check(nrfx_err_t nrfx_err)
 {
-        return NRFX_ERROR_BASE_NUM - nrfx_err ? true : false;
+	return NRFX_ERROR_BASE_NUM - nrfx_err ? true : false;
 }
 
-static void bind_devices(void)
+static int bind_devices(void)
 {
 	dev.spkr_pwm = device_get_binding(DT_PROP(DT_NODELABEL(pwm0), label));
 	dev.gpio_0 = device_get_binding(DT_PROP(DT_NODELABEL(gpio0), label));
-	dev.io_expander = device_get_binding(DT_PROP(DT_NODELABEL(sx1509b), label));
+	dev.io_expander =
+		device_get_binding(DT_PROP(DT_NODELABEL(sx1509b), label));
 
-	if ((dev.gpio_0 == NULL) || (dev.spkr_pwm == NULL) || (dev.io_expander == NULL)) {
-		printk("Failure occured while binding devices\n");
+	if ((dev.gpio_0 == NULL) || (dev.spkr_pwm == NULL) ||
+	    (dev.io_expander == NULL)) {
+		return -1;
 	}
+
+	return 0;
 }
 
 static void button_handler_cb(u32_t pressed, u32_t changed)
 {
-
-	if ((pressed &  BIT(0))) {
+	if (pressed & BIT(0)) {
 		orientation_t orr = thingy52_orientation_get();
 		printk("Orientation: %d\n", orr);
+
 		switch (orr) {
-                        case THINGY_ORIENT_X_UP:
-                                gpio_pin_set_raw(dev.gpio_0, SPKR_PWR, 0);
-		                printk("Speaker off\n");
-                                break;
-                        case THINGY_ORIENT_Y_UP:
-                                gpio_pin_set_raw(dev.gpio_0, SPKR_PWR, 1);
-		                printk("Speaker on\n");
+		case THINGY_ORIENT_X_UP:
+			gpio_pin_set_raw(dev.gpio_0, SPKR_PWR, 0);
+			printk("Speaker off\n");
+			break;
+		case THINGY_ORIENT_Y_UP:
+			gpio_pin_set_raw(dev.gpio_0, SPKR_PWR, 1);
+			printk("Speaker on\n");
+			break;
+		case THINGY_ORIENT_Y_DOWN:
+			break;
+		case THINGY_ORIENT_X_DOWN:
+			break;
+		case THINGY_ORIENT_Z_DOWN: {
+			static bool onoff = false;
+			int err = 0;
+			printk("Speaker onoff: %d\n", onoff);
 
-                                break;
-                        case THINGY_ORIENT_Y_DOWN:
-                                break;
-                        case THINGY_ORIENT_X_DOWN:
-                                break;
-                        case THINGY_ORIENT_Z_DOWN:{
-                                static bool onoff = false;
-	                        int err = 0;
-                                printk("Speaker onoff: %d\n", onoff);
+			if (onoff) {
+				err |= sx1509b_set_pin_value(dev.io_expander,
+							     MIC_PWR, 1);
+				err |= nrfx_err_code_check(nrfx_pdm_start());
+				k_delayed_work_submit(&mic_cfg.microphone_work,
+						      K_NO_WAIT);
+			} else {
+				k_delayed_work_cancel(&mic_cfg.microphone_work);
+				err |= nrfx_err_code_check(nrfx_pdm_stop());
+				err |= sx1509b_set_pin_value(dev.io_expander,
+							     MIC_PWR, 0);
+			}
 
-                                if (onoff) {
-                                        sx1509b_gpio_pin_onoff(dev.io_expander, MIC_PWR, 1);
-                                        err = nrfx_err_code_check(nrfx_pdm_start());
-                                        k_delayed_work_submit(&mic_cfg.microphone_work, K_NO_WAIT);
-                                } else {
-                                        k_delayed_work_cancel(&mic_cfg.microphone_work);
-                                        err = nrfx_err_code_check(nrfx_pdm_stop());
-                                        sx1509b_gpio_pin_onoff(dev.io_expander, MIC_PWR, 0);
-                                }
-                                onoff = !onoff;
-                                if (err) {
-                                        printk("Error running PDM\n");
-                                }
-                                break;}
-                        case THINGY_ORIENT_Z_UP:
+			onoff = !onoff;
 
-                                break;
-                        default:
-                                return;
+			if (err) {
+				printk("Error running PDM\n");
+			}
+
+			break;
+		}
+		case THINGY_ORIENT_Z_UP:
+			break;
+		default:
+			return;
 		}
 	}
 }
@@ -112,13 +120,12 @@ static void button_and_led_init(void)
 	dk_button_handler_add(&button_handler);
 
 	for (int i = GREEN_LED; i <= RED_LED; i++) {
-		err |= sx1509b_set_pwm(dev.io_expander, i, 0);
-		err |= sx1509b_led_drv_pin_init(dev.io_expander, i);
+		err |= sx1509b_pin_configure(dev.io_expander, i, SX1509B_PWM);
 	}
 
-        if (err) {
-                printk("Initializing buttons and leds failed.\n");
-        }
+	if (err) {
+		printk("Initializing buttons and leds failed.\n");
+	}
 }
 
 static void speaker_init(u32_t pwm_frequency)
@@ -126,12 +133,14 @@ static void speaker_init(u32_t pwm_frequency)
 	int err = 0;
 	u32_t pwm_period = 1000000U / pwm_frequency;
 
-	err |= gpio_pin_configure(dev.gpio_0, SPKR_PWR, GPIO_OUTPUT | GPIO_PULL_UP);
-	err |= pwm_pin_set_usec(dev.spkr_pwm, SPKR_PWM, pwm_period, pwm_period / 2U, 0);
+	err |= gpio_pin_configure(dev.gpio_0, SPKR_PWR,
+				  GPIO_OUTPUT | GPIO_PULL_UP);
+	err |= pwm_pin_set_usec(dev.spkr_pwm, SPKR_PWM, pwm_period,
+				pwm_period / 2U, 0);
 
-        if (err) {
-                printk("Initializing speaker failed.\n");
-        }
+	if (err) {
+		printk("Initializing speaker failed.\n");
+	}
 }
 
 static void pdm_event_handler(nrfx_pdm_evt_t const *p_evt)
@@ -159,8 +168,8 @@ static void pdm_event_handler(nrfx_pdm_evt_t const *p_evt)
 
 static void microphone_work_handler(struct k_work *work)
 {
-        static int avg_freq;
-        static int spectrum[128];
+	static int avg_freq;
+	static int spectrum[128];
 
 	if (fft_analyzer_available()) {
 		int counter = 0;
@@ -198,14 +207,15 @@ static void microphone_init(void)
 	int err = 0;
 
 	err |= fft_analyzer_configure(FFT_SIZE);
-	err |= sx1509b_gpio_output_pin_init(dev.io_expander, MIC_PWR);
+	err |= sx1509b_pin_configure(dev.io_expander, MIC_PWR, SX1509B_OUTPUT);
 	mic_cfg.pdm_config.gain_l = 70; // 80 (decimal) is max
 	err = nrfx_err_code_check(
 		nrfx_pdm_init(&mic_cfg.pdm_config, pdm_event_handler));
 
 	if (err) {
-                printk("Initializing microphone failed.\n");
-        }
+		printk("Initializing microphone failed.\n");
+	}
+
 	k_delayed_work_init(&mic_cfg.microphone_work, microphone_work_handler);
 }
 
@@ -224,12 +234,28 @@ static struct bt_mesh_cfg_srv cfg_srv = {
 
 static void attention_on(struct bt_mesh_model *mod)
 {
-        printk("attention_on\n");
+	int err = 0;
+
+	for (int i = GREEN_LED; i <= RED_LED; i++) {
+		err |= sx1509b_led_set_pwm_value(dev.io_expander, i, 255);
+	}
+
+	if (err) {
+		printk("Error turning on attention light");
+	}
 }
 
 static void attention_off(struct bt_mesh_model *mod)
 {
-        printk("attention_off\n");
+	int err = 0;
+
+	for (int i = GREEN_LED; i <= RED_LED; i++) {
+		err |= sx1509b_led_set_pwm_value(dev.io_expander, i, 0);
+	}
+
+	if (err) {
+		printk("Error turning off attention light");
+	}
 }
 
 static const struct bt_mesh_health_srv_cb health_srv_cb = {
@@ -251,11 +277,11 @@ static struct bt_mesh_whistle_srv whistle_srv =
 	BT_MESH_WHISTLE_SRV_INIT(&handlers);
 
 static struct bt_mesh_elem elements[] = {
-	BT_MESH_ELEM(
-		1, BT_MESH_MODEL_LIST(
-			BT_MESH_MODEL_CFG_SRV(&cfg_srv),
-			BT_MESH_MODEL_HEALTH_SRV(&health_srv, &health_pub)),
-		BT_MESH_MODEL_NONE),
+	BT_MESH_ELEM(1,
+		     BT_MESH_MODEL_LIST(BT_MESH_MODEL_CFG_SRV(&cfg_srv),
+					BT_MESH_MODEL_HEALTH_SRV(&health_srv,
+								 &health_pub)),
+		     BT_MESH_MODEL_NONE),
 	BT_MESH_ELEM(
 		2, BT_MESH_MODEL_LIST(BT_MESH_MODEL_WHISTLE_CLI(&whistle_cli)),
 		BT_MESH_MODEL_NONE),
@@ -272,9 +298,13 @@ static const struct bt_mesh_comp comp = {
 
 const struct bt_mesh_comp *model_handler_init(void)
 {
-        bind_devices();
+	if (bind_devices()) {
+		printk("Failure occured while binding devices\n");
+		return &comp;
+	}
+
 	button_and_led_init();
-        thingy52_orientation_handler_init();
+	thingy52_orientation_handler_init();
 	speaker_init(SPEAKER_PWM_FREQ);
 	microphone_init();
 
