@@ -24,9 +24,11 @@ static struct devices dev;
 
 struct rgb_work {
 	struct k_delayed_work work;
-        struct bt_mesh_whistle_rgb_msg rgb_msg;
+	struct bt_mesh_whistle_rgb_msg rgb_msg;
 };
 static struct rgb_work rgb_work[5];
+
+static struct bt_mesh_whistle_rgb cur_rgb_vals;
 
 static inline int nrfx_err_code_check(nrfx_err_t nrfx_err)
 {
@@ -48,11 +50,33 @@ static int bind_devices(void)
 	return 0;
 }
 
+static struct k_delayed_work led_fade_work;
+
+static void led_fade(struct k_work *work)
+{
+	if (!cur_rgb_vals.red && !cur_rgb_vals.green && ! cur_rgb_vals.blue) {
+		printk("Led fade complete\n");
+		return;
+	}
+
+	cur_rgb_vals.red *= 0.9;
+	cur_rgb_vals.green *= 0.9;
+	cur_rgb_vals.blue *= 0.9;
+
+	sx1509b_led_set_pwm_value(dev.io_expander, RED_LED, cur_rgb_vals.red);
+	sx1509b_led_set_pwm_value(dev.io_expander, GREEN_LED, cur_rgb_vals.green);
+	sx1509b_led_set_pwm_value(dev.io_expander, BLUE_LED, cur_rgb_vals.blue);
+
+	k_delayed_work_submit(&led_fade_work, K_MSEC(20));
+}
+
 static void set_rgb_led(struct bt_mesh_whistle_rgb rgb)
 {
 	sx1509b_led_set_pwm_value(dev.io_expander, RED_LED, rgb.red);
 	sx1509b_led_set_pwm_value(dev.io_expander, GREEN_LED, rgb.green);
 	sx1509b_led_set_pwm_value(dev.io_expander, BLUE_LED, rgb.blue);
+
+	cur_rgb_vals = rgb;
 }
 
 static struct k_delayed_work device_attention_work;
@@ -61,12 +85,13 @@ static void device_attention(struct k_work *work)
 {
 	static uint8_t idx;
 	const struct bt_mesh_whistle_rgb colors[2] = {
-		{.red = 0, .green = 0, .blue = 0},
-		{.red = 255, .green = 255, .blue = 255},
+		{ .red = 0, .green = 0, .blue = 0 },
+		{ .red = 255, .green = 255, .blue = 255 },
 
 	};
 
-	set_rgb_led(colors[idx % (sizeof(colors) / sizeof(struct bt_mesh_whistle_rgb))]);
+	set_rgb_led(colors[idx % (sizeof(colors) /
+				  sizeof(struct bt_mesh_whistle_rgb))]);
 	idx++;
 	k_delayed_work_submit(&device_attention_work, K_MSEC(400));
 }
@@ -78,20 +103,20 @@ static void button_handler_cb(u32_t pressed, u32_t changed)
 		printk("Orientation: %d\n", orr);
 
 		switch (orr) {
-			case THINGY_ORIENT_X_UP:
-				break;
-			case THINGY_ORIENT_Y_UP:
-				break;
-			case THINGY_ORIENT_Y_DOWN:
-				break;
-			case THINGY_ORIENT_X_DOWN:
-				break;
-			case THINGY_ORIENT_Z_DOWN:
-				break;
-			case THINGY_ORIENT_Z_UP:
-				break;
-			default:
-				return;
+		case THINGY_ORIENT_X_UP:
+			break;
+		case THINGY_ORIENT_Y_UP:
+			break;
+		case THINGY_ORIENT_Y_DOWN:
+			break;
+		case THINGY_ORIENT_X_DOWN:
+			break;
+		case THINGY_ORIENT_Z_DOWN:
+			break;
+		case THINGY_ORIENT_Z_UP:
+			break;
+		default:
+			return;
 		}
 	}
 }
@@ -110,6 +135,8 @@ static void button_and_led_init(void)
 	for (int i = GREEN_LED; i <= RED_LED; i++) {
 		err |= sx1509b_pin_configure(dev.io_expander, i, SX1509B_PWM);
 	}
+
+	k_delayed_work_init(&led_fade_work, led_fade);
 
 	if (err) {
 		printk("Initializing buttons and leds failed.\n");
@@ -167,20 +194,19 @@ BT_MESH_HEALTH_PUB_DEFINE(health_pub, 0);
 
 static uint8_t next_rgb_work_idx_get(void)
 {
-        uint8_t idx = 0;
-        uint16_t top_delay = 0xFFFF;
+	uint8_t idx = 0;
+	uint16_t top_delay = 0xFFFF;
 
 	for (int i = 0; i < ARRAY_SIZE(rgb_work); ++i) {
-        	int32_t rem = k_delayed_work_remaining_ticks(&rgb_work[i].work);
+		int32_t rem = k_delayed_work_remaining_ticks(&rgb_work[i].work);
 
-                if ((rem != 0) && (rgb_work[i].rgb_msg.delay < top_delay))
-                {
-                        idx = i;
-                        top_delay = rgb_work[i].rgb_msg.delay;
-                }
+		if ((rem != 0) && (rgb_work[i].rgb_msg.delay < top_delay)) {
+			idx = i;
+			top_delay = rgb_work[i].rgb_msg.delay;
+		}
 	}
 
-        return idx;
+	return idx;
 }
 
 static void rgb_work_output_set(void)
@@ -189,8 +215,7 @@ static void rgb_work_output_set(void)
 
 	set_rgb_led(rgb_work[idx].rgb_msg.color);
 
-	if (rgb_work[idx].rgb_msg.speaker_on)
-	{
+	if (rgb_work[idx].rgb_msg.speaker_on) {
 		gpio_pin_set_raw(dev.gpio_0, SPKR_PWR, 1);
 	} else {
 		gpio_pin_set_raw(dev.gpio_0, SPKR_PWR, 0);
@@ -201,6 +226,13 @@ void rgb_set_handler(struct bt_mesh_whistle_srv *srv,
 		     struct bt_mesh_msg_ctx *ctx,
 		     struct bt_mesh_whistle_rgb_msg rgb)
 {
+	if (rgb.delay == 0xFFFF) {
+		set_rgb_led(rgb.color);
+		k_delayed_work_submit(&led_fade_work, K_NO_WAIT);
+
+		return;
+	}
+
 	for (int i = 0; i < ARRAY_SIZE(rgb_work); ++i) {
 		int32_t rem = k_delayed_work_remaining_ticks(&rgb_work[i].work);
 
@@ -212,7 +244,7 @@ void rgb_set_handler(struct bt_mesh_whistle_srv *srv,
 				K_MSEC(rgb_work[i].rgb_msg.delay));
 			rgb_work_output_set();
 
-                        return;
+			return;
 		}
 	}
 }
@@ -246,13 +278,14 @@ static void rgb_msg_timeout(struct k_work *work)
 	struct rgb_work *rgb = CONTAINER_OF(work, struct rgb_work, work.work);
 	uint8_t buffer_idx = rgb - &rgb_work[0];
 
-        if (rgb_work[buffer_idx].rgb_msg.ttl)
-        {
-                rgb_work[buffer_idx].rgb_msg.ttl--;
-                bt_mesh_whistle_srv_rgb_set(&whistle_srv, NULL, &rgb_work[buffer_idx].rgb_msg);
-        }
+	if (rgb_work[buffer_idx].rgb_msg.ttl) {
+		rgb_work[buffer_idx].rgb_msg.ttl--;
+		bt_mesh_whistle_srv_rgb_set(&whistle_srv, NULL,
+					    &rgb_work[buffer_idx].rgb_msg);
+	}
 
-        memset(&rgb_work[buffer_idx].rgb_msg, 0, sizeof(struct bt_mesh_whistle_rgb_msg));
+	memset(&rgb_work[buffer_idx].rgb_msg, 0,
+	       sizeof(struct bt_mesh_whistle_rgb_msg));
 	rgb_work_output_set();
 }
 
