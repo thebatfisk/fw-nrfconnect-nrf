@@ -27,8 +27,8 @@ static struct devices dev;
 
 struct mic_config {
 	nrfx_pdm_config_t pdm_config;
-	int16_t pdm_buffer_a[256];
-	int16_t pdm_buffer_b[256];
+	int16_t pdm_buffer_a[FFT_SIZE];
+	int16_t pdm_buffer_b[FFT_SIZE];
 	struct k_delayed_work microphone_work;
 };
 static struct mic_config mic_cfg = {
@@ -169,7 +169,7 @@ static void pdm_event_handler(nrfx_pdm_evt_t const *p_evt)
 static void microphone_work_handler(struct k_work *work)
 {
 	static int avg_freq;
-	static int spectrum[128];
+	static int spectrum[SPECTRUM_SIZE];
 
 	if (fft_analyzer_available()) {
 		int counter = 0;
@@ -209,7 +209,7 @@ static void microphone_init(void)
 	err |= fft_analyzer_configure(FFT_SIZE);
 	err |= sx1509b_pin_configure(dev.io_expander, MIC_PWR, SX1509B_OUTPUT);
 	mic_cfg.pdm_config.gain_l = 70; // 80 (decimal) is max
-	err = nrfx_err_code_check(
+	err |= nrfx_err_code_check(
 		nrfx_pdm_init(&mic_cfg.pdm_config, pdm_event_handler));
 
 	if (err) {
