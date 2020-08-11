@@ -283,11 +283,11 @@ static struct bt_mesh_elem elements[] = {
 								 &health_pub)),
 		     BT_MESH_MODEL_NONE),
 	BT_MESH_ELEM(
-		2, BT_MESH_MODEL_LIST(BT_MESH_MODEL_WHISTLE_CLI(&whistle_cli)),
-		BT_MESH_MODEL_NONE),
+		2, BT_MESH_MODEL_NONE,
+		BT_MESH_MODEL_LIST(BT_MESH_MODEL_WHISTLE_CLI(&whistle_cli))),
 	BT_MESH_ELEM(
-		3, BT_MESH_MODEL_LIST(BT_MESH_MODEL_WHISTLE_SRV(&whistle_srv)),
-		BT_MESH_MODEL_NONE),
+		3, BT_MESH_MODEL_NONE,
+		BT_MESH_MODEL_LIST(BT_MESH_MODEL_WHISTLE_SRV(&whistle_srv))),
 };
 
 static const struct bt_mesh_comp comp = {
