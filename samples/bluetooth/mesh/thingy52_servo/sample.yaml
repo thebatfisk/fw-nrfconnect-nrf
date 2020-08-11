@@ -1,0 +1,9 @@
+sample:
+  name: Bluetooth Mesh Thingy52 Servo
+  description: Bluetooth Mesh Thingy52 Servo
+tests:
+  samples.bluetooth.mesh.thingy52_servo:
+    build_only: true
+    build_on_all: true
+    platform_whitelist: nrf52840dk_nrf52840
+    tags: bluetooth ci_build
