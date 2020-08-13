@@ -31,6 +31,9 @@ struct mic_config {
 	int16_t pdm_buffer_b[FFT_SIZE];
 	struct k_delayed_work microphone_work;
 };
+
+struct k_delayed_work rgb_picker_work;
+
 static struct mic_config mic_cfg = {
 	.pdm_config = NRFX_PDM_DEFAULT_CONFIG(26, 25),
 };
@@ -38,6 +41,44 @@ static struct mic_config mic_cfg = {
 static inline int nrfx_err_code_check(nrfx_err_t nrfx_err)
 {
 	return NRFX_ERROR_BASE_NUM - nrfx_err ? true : false;
+}
+
+static void set_rgb_led(struct bt_mesh_whistle_rgb rgb)
+{
+	sx1509b_led_set_pwm_value(dev.io_expander, RED_LED, rgb.red);
+	sx1509b_led_set_pwm_value(dev.io_expander, GREEN_LED, rgb.green);
+	sx1509b_led_set_pwm_value(dev.io_expander, BLUE_LED, rgb.blue);
+}
+
+static void pick_rgb(uint16_t input_val, struct bt_mesh_whistle_rgb *rgb)
+{
+	uint16_t raw_val = input_val % (6 * 256);
+	uint8_t rgb_array[3];
+
+	if (!raw_val)
+	{
+		memset(rgb_array, 0, sizeof(rgb_array));
+		goto end;
+	}
+
+	uint8_t domain_idx = ((raw_val - (raw_val % 256)) / 256);
+	uint8_t zero_idx = (((4 + domain_idx) - ((4 + domain_idx) % 2)) / 2) % sizeof(rgb_array);
+	uint8_t max_idx = (((1 + domain_idx) - ((1 + domain_idx) % 2)) / 2) % sizeof(rgb_array);
+	uint8_t working_idx = (1 + (2 * domain_idx )) % sizeof(rgb_array);
+
+	rgb_array[zero_idx] = 0;
+	rgb_array[max_idx] = 255;
+
+	if ((domain_idx + 1) % 2) {
+		rgb_array[working_idx] = raw_val % 256;
+	} else {
+		rgb_array[working_idx] = 255 - (raw_val % 256);
+	}
+
+	end:
+	rgb->red = rgb_array[0];
+	rgb->green = rgb_array[1];
+	rgb->blue = rgb_array[2];
 }
 
 static int bind_devices(void)
@@ -77,7 +118,7 @@ static void button_handler_cb(u32_t pressed, u32_t changed)
 		case THINGY_ORIENT_Z_DOWN: {
 			static bool onoff = false;
 			int err = 0;
-			printk("Speaker onoff: %d\n", onoff);
+			printk("Mic onoff: %d\n", onoff);
 
 			if (onoff) {
 				err |= sx1509b_set_pin_value(dev.io_expander,
@@ -100,8 +141,19 @@ static void button_handler_cb(u32_t pressed, u32_t changed)
 
 			break;
 		}
-		case THINGY_ORIENT_Z_UP:
+		case THINGY_ORIENT_Z_UP: {
+			static bool onoff = false;
+			onoff = !onoff;
+			printk("RGB pick onoff: %d\n", onoff);
+
+			if (onoff) {
+				k_delayed_work_submit(&rgb_picker_work,
+						      K_NO_WAIT);
+			} else {
+				k_delayed_work_cancel(&rgb_picker_work);
+			}
 			break;
+		}
 		default:
 			return;
 		}
@@ -200,6 +252,17 @@ static void microphone_work_handler(struct k_work *work)
 	}
 
 	k_delayed_work_submit(&mic_cfg.microphone_work, K_MSEC(200));
+}
+
+static void rgb_picker_work_handler(struct k_work *work)
+{
+	static uint16_t val;
+	struct bt_mesh_whistle_rgb rgb;
+
+	pick_rgb(val, &rgb);
+	set_rgb_led(rgb);
+	val += 16;
+	k_delayed_work_submit(&rgb_picker_work, K_MSEC(200));
 }
 
 static void microphone_init(void)
@@ -307,6 +370,7 @@ const struct bt_mesh_comp *model_handler_init(void)
 	thingy52_orientation_handler_init();
 	speaker_init(SPEAKER_PWM_FREQ);
 	microphone_init();
+	k_delayed_work_init(&rgb_picker_work, rgb_picker_work_handler);
 
 	return &comp;
 }
