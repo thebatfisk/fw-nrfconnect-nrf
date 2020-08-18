@@ -54,7 +54,7 @@ static struct k_delayed_work led_fade_work;
 
 static void led_fade(struct k_work *work)
 {
-	if (!cur_rgb_vals.red && !cur_rgb_vals.green && ! cur_rgb_vals.blue) {
+	if (!cur_rgb_vals.red && !cur_rgb_vals.green && !cur_rgb_vals.blue) {
 		printk("Led fade complete\n");
 		return;
 	}
@@ -63,18 +63,18 @@ static void led_fade(struct k_work *work)
 	cur_rgb_vals.green *= 0.9;
 	cur_rgb_vals.blue *= 0.9;
 
-	sx1509b_led_set_pwm_value(dev.io_expander, RED_LED, cur_rgb_vals.red);
-	sx1509b_led_set_pwm_value(dev.io_expander, GREEN_LED, cur_rgb_vals.green);
-	sx1509b_led_set_pwm_value(dev.io_expander, BLUE_LED, cur_rgb_vals.blue);
+	sx1509b_set_pwm_val(dev.io_expander, RED_LED, cur_rgb_vals.red);
+	sx1509b_set_pwm_val(dev.io_expander, GREEN_LED, cur_rgb_vals.green);
+	sx1509b_set_pwm_val(dev.io_expander, BLUE_LED, cur_rgb_vals.blue);
 
 	k_delayed_work_submit(&led_fade_work, K_MSEC(20));
 }
 
 static void set_rgb_led(struct bt_mesh_whistle_rgb rgb)
 {
-	sx1509b_led_set_pwm_value(dev.io_expander, RED_LED, rgb.red);
-	sx1509b_led_set_pwm_value(dev.io_expander, GREEN_LED, rgb.green);
-	sx1509b_led_set_pwm_value(dev.io_expander, BLUE_LED, rgb.blue);
+	sx1509b_set_pwm_val(dev.io_expander, RED_LED, rgb.red);
+	sx1509b_set_pwm_val(dev.io_expander, GREEN_LED, rgb.green);
+	sx1509b_set_pwm_val(dev.io_expander, BLUE_LED, rgb.blue);
 
 	cur_rgb_vals = rgb;
 }
@@ -133,7 +133,7 @@ static void button_and_led_init(void)
 	dk_button_handler_add(&button_handler);
 
 	for (int i = GREEN_LED; i <= RED_LED; i++) {
-		err |= sx1509b_pin_configure(dev.io_expander, i, SX1509B_PWM);
+		err |= sx1509b_pwm_pin_configure(dev.io_expander, i);
 	}
 
 	k_delayed_work_init(&led_fade_work, led_fade);

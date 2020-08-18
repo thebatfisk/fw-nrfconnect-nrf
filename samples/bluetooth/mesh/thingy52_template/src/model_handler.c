@@ -45,9 +45,9 @@ static inline int nrfx_err_code_check(nrfx_err_t nrfx_err)
 
 static void set_rgb_led(struct bt_mesh_whistle_rgb rgb)
 {
-	sx1509b_led_set_pwm_value(dev.io_expander, RED_LED, rgb.red);
-	sx1509b_led_set_pwm_value(dev.io_expander, GREEN_LED, rgb.green);
-	sx1509b_led_set_pwm_value(dev.io_expander, BLUE_LED, rgb.blue);
+	sx1509b_set_pwm_val(dev.io_expander, RED_LED, rgb.red);
+	sx1509b_set_pwm_val(dev.io_expander, GREEN_LED, rgb.green);
+	sx1509b_set_pwm_val(dev.io_expander, BLUE_LED, rgb.blue);
 }
 
 static void pick_rgb(uint16_t input_val, struct bt_mesh_whistle_rgb *rgb)
@@ -55,16 +55,17 @@ static void pick_rgb(uint16_t input_val, struct bt_mesh_whistle_rgb *rgb)
 	uint16_t raw_val = input_val % (6 * 256);
 	uint8_t rgb_array[3];
 
-	if (!raw_val)
-	{
+	if (!raw_val) {
 		memset(rgb_array, 0, sizeof(rgb_array));
 		goto end;
 	}
 
 	uint8_t domain_idx = ((raw_val - (raw_val % 256)) / 256);
-	uint8_t zero_idx = (((4 + domain_idx) - ((4 + domain_idx) % 2)) / 2) % sizeof(rgb_array);
-	uint8_t max_idx = (((1 + domain_idx) - ((1 + domain_idx) % 2)) / 2) % sizeof(rgb_array);
-	uint8_t working_idx = (1 + (2 * domain_idx )) % sizeof(rgb_array);
+	uint8_t zero_idx = (((4 + domain_idx) - ((4 + domain_idx) % 2)) / 2) %
+			   sizeof(rgb_array);
+	uint8_t max_idx = (((1 + domain_idx) - ((1 + domain_idx) % 2)) / 2) %
+			  sizeof(rgb_array);
+	uint8_t working_idx = (1 + (2 * domain_idx)) % sizeof(rgb_array);
 
 	rgb_array[zero_idx] = 0;
 	rgb_array[max_idx] = 255;
@@ -75,7 +76,7 @@ static void pick_rgb(uint16_t input_val, struct bt_mesh_whistle_rgb *rgb)
 		rgb_array[working_idx] = 255 - (raw_val % 256);
 	}
 
-	end:
+end:
 	rgb->red = rgb_array[0];
 	rgb->green = rgb_array[1];
 	rgb->blue = rgb_array[2];
@@ -121,16 +122,16 @@ static void button_handler_cb(u32_t pressed, u32_t changed)
 			printk("Mic onoff: %d\n", onoff);
 
 			if (onoff) {
-				err |= sx1509b_set_pin_value(dev.io_expander,
-							     MIC_PWR, 1);
+				err |= gpio_port_set_bits_raw(dev.io_expander,
+							      BIT(MIC_PWR));
 				err |= nrfx_err_code_check(nrfx_pdm_start());
 				k_delayed_work_submit(&mic_cfg.microphone_work,
 						      K_NO_WAIT);
 			} else {
 				k_delayed_work_cancel(&mic_cfg.microphone_work);
 				err |= nrfx_err_code_check(nrfx_pdm_stop());
-				err |= sx1509b_set_pin_value(dev.io_expander,
-							     MIC_PWR, 0);
+				err |= gpio_port_clear_bits_raw(dev.io_expander,
+								BIT(MIC_PWR));
 			}
 
 			onoff = !onoff;
@@ -172,7 +173,7 @@ static void button_and_led_init(void)
 	dk_button_handler_add(&button_handler);
 
 	for (int i = GREEN_LED; i <= RED_LED; i++) {
-		err |= sx1509b_pin_configure(dev.io_expander, i, SX1509B_PWM);
+		err |= sx1509b_pwm_pin_configure(dev.io_expander, i);
 	}
 
 	if (err) {
@@ -270,7 +271,7 @@ static void microphone_init(void)
 	int err = 0;
 
 	err |= fft_analyzer_configure(FFT_SIZE);
-	err |= sx1509b_pin_configure(dev.io_expander, MIC_PWR, SX1509B_OUTPUT);
+	err |= gpio_pin_configure(dev.io_expander, MIC_PWR, GPIO_OUTPUT);
 	mic_cfg.pdm_config.gain_l = 70; // 80 (decimal) is max
 	err |= nrfx_err_code_check(
 		nrfx_pdm_init(&mic_cfg.pdm_config, pdm_event_handler));
@@ -300,7 +301,7 @@ static void attention_on(struct bt_mesh_model *mod)
 	int err = 0;
 
 	for (int i = GREEN_LED; i <= RED_LED; i++) {
-		err |= sx1509b_led_set_pwm_value(dev.io_expander, i, 255);
+		err |= sx1509b_set_pwm_val(dev.io_expander, i, 255);
 	}
 
 	if (err) {
@@ -313,7 +314,7 @@ static void attention_off(struct bt_mesh_model *mod)
 	int err = 0;
 
 	for (int i = GREEN_LED; i <= RED_LED; i++) {
-		err |= sx1509b_led_set_pwm_value(dev.io_expander, i, 0);
+		err |= sx1509b_set_pwm_val(dev.io_expander, i, 0);
 	}
 
 	if (err) {
