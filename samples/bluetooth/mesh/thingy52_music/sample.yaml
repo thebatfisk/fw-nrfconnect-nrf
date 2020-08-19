@@ -2,7 +2,7 @@ sample:
   name: Bluetooth Mesh Thingy52 music sample
   description: Bluetooth Mesh Thingy52 music sample
 tests:
-  samples.bluetooth.mesh.thingy52_template:
+  samples.bluetooth.mesh.thingy52_music:
     build_only: true
     build_on_all: true
     platform_whitelist: thingy52_nrf52832

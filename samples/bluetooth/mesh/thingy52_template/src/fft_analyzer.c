@@ -76,6 +76,7 @@ int fft_analyzer_configure(int length)
 	return FFT_NO_ERROR;
 }
 
+/* This function takes 0.5536 ms */
 void fft_analyzer_update(const void *buffer, int size)
 {
 	if (size > _sample_buffer_size) {
