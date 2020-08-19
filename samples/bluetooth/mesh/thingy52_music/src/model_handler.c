@@ -10,7 +10,6 @@
 #include <drivers/gpio/gpio_sx1509b.h>
 #include <drivers/pwm.h>
 #include <dk_buttons_and_leds.h>
-#include <thingy52_orientation_handler.h>
 #include "model_handler.h"
 
 #define PDM_SAMPLING_FREQ 16000
@@ -19,8 +18,6 @@
 #define SPEAKER_PWM_FREQ 880
 
 #define NUM_FREQ_BANDS 3
-
-// TODO: Remove all 'int' that are not err
 
 static struct bt_mesh_whistle_cli whistle_cli[NUM_FREQ_BANDS] = {
 	[0 ... NUM_FREQ_BANDS - 1] = BT_MESH_WHISTLE_CLI_INIT
@@ -107,7 +104,7 @@ static void button_and_led_init(void)
 	}
 
 	if (err) {
-		printk("Initializing buttons and leds failed.\n");
+		printk("Initializing buttons and leds failed\n");
 	}
 }
 
@@ -122,16 +119,15 @@ static void speaker_init(u32_t pwm_frequency)
 				pwm_period / 2U, 0);
 
 	if (err) {
-		printk("Initializing speaker failed.\n");
+		printk("Initializing speaker failed\n");
 	}
 }
 
-// TODO: Move to thread? Move fft_analyzer? Profile ARM FFT?
-// Looks like fft_analyzer_update() is called twice because of
-// nrfx driver "calls the event handler twice"
-// - Add a flag for seeing witch "buffer that is active"?
 static void pdm_event_handler(nrfx_pdm_evt_t const *p_evt)
 {
+	static bool a_buf_analyzed = false;
+	static bool b_buf_analyzed = false;
+
 	if (p_evt->error) {
 		printk("PDM overflow error\n");
 	} else if (p_evt->buffer_requested && p_evt->buffer_released == 0) {
@@ -143,18 +139,28 @@ static void pdm_event_handler(nrfx_pdm_evt_t const *p_evt)
 		nrfx_pdm_buffer_set(mic_cfg.pdm_buffer_b,
 				    sizeof(mic_cfg.pdm_buffer_b) /
 					    sizeof(mic_cfg.pdm_buffer_b[0]));
-		fft_analyzer_update(mic_cfg.pdm_buffer_a, FFT_SIZE);
+		if (!a_buf_analyzed) {
+			fft_analyzer_update(mic_cfg.pdm_buffer_a, FFT_SIZE);
+			a_buf_analyzed = true;
+			b_buf_analyzed = false;
+		}
 	} else if (p_evt->buffer_requested &&
 		   p_evt->buffer_released == mic_cfg.pdm_buffer_b) {
 		nrfx_pdm_buffer_set(mic_cfg.pdm_buffer_a,
 				    sizeof(mic_cfg.pdm_buffer_a) /
 					    sizeof(mic_cfg.pdm_buffer_a[0]));
-		fft_analyzer_update(mic_cfg.pdm_buffer_b, FFT_SIZE);
+		if (!b_buf_analyzed) {
+			fft_analyzer_update(mic_cfg.pdm_buffer_b, FFT_SIZE);
+			b_buf_analyzed = true;
+			a_buf_analyzed = false;
+		}
 	}
 }
 
-static void send_color_helper(int iterator, int value)
+static void send_color_helper(int iterator, uint16_t value)
 {
+	int err = 0;
+
 	static struct bt_mesh_whistle_rgb_msg msg = {
 		.ttl = 0,
 		.delay = 0xFFFF,
@@ -167,31 +173,35 @@ static void send_color_helper(int iterator, int value)
 		msg.color.red = 0;
 		msg.color.green = 0;
 		msg.color.blue = value;
-		bt_mesh_whistle_cli_rgb_set(&whistle_cli[iterator], NULL, &msg);
+		err |= bt_mesh_whistle_cli_rgb_set(&whistle_cli[iterator], NULL, &msg);
 	} else if (iterator == 1) {
 		msg.color.red = 0;
 		msg.color.green = value;
 		msg.color.blue = 0;
-		bt_mesh_whistle_cli_rgb_set(&whistle_cli[iterator], NULL, &msg);
+		err |= bt_mesh_whistle_cli_rgb_set(&whistle_cli[iterator], NULL, &msg);
 	} else if (iterator == 2) {
 		msg.color.red = value;
 		msg.color.green = 0;
 		msg.color.blue = 0;
-		bt_mesh_whistle_cli_rgb_set(&whistle_cli[iterator], NULL, &msg);
+		err |= bt_mesh_whistle_cli_rgb_set(&whistle_cli[iterator], NULL, &msg);
 	} else {
 		printk("Unknown iterator\n");
+	}
+
+	if (err) {
+		printk("Error sending RGB set message\n");
 	}
 }
 
 static void microphone_work_handler(struct k_work *work)
 {
 	static int spectrum[SPECTRUM_SIZE];
-	static int freq_sum[NUM_FREQ_BANDS];
-	static int prev_freq_sum[NUM_FREQ_BANDS];
-	static int total_sum;
-	static int checker;
-	static int divider;
-	static int adj_freq_sum;
+	static uint16_t freq_sum[NUM_FREQ_BANDS];
+	static uint16_t prev_freq_sum[NUM_FREQ_BANDS];
+	static uint16_t total_sum;
+	static uint16_t checker;
+	static uint8_t divider;
+	static uint16_t adj_freq_sum;
 
 	if (fft_analyzer_available()) {
 		int i;
@@ -205,22 +215,19 @@ static void microphone_work_handler(struct k_work *work)
 		/** Should create the amount of for-loops that macthes NUM_FREQ_BANDS */
 
 		for (i = 0; i <= 80; i++) {
-			// TODO: Be able to tune this?
-			if (spectrum[i] > 200) {
+			if (spectrum[i] > 100) {
 				freq_sum[0] += spectrum[i];
 			}
 		}
 
-		for (i = 81; i <= 130; i++) {
-			// TODO: Be able to tune this?
+		for (i = 81; i <= 115; i++) {
 			if (spectrum[i] > 100) {
 				freq_sum[1] += spectrum[i];
 			}
 		}
 
-		for (i = 131; i <= 255; i++) {
-			// TODO: Be able to tune this?
-			if (spectrum[i] > 200) {
+		for (i = 116; i <= 255; i++) {
+			if (spectrum[i] > 100) {
 				freq_sum[2] += spectrum[i];
 			}
 		}
@@ -228,9 +235,10 @@ static void microphone_work_handler(struct k_work *work)
 		total_sum = freq_sum[0] + freq_sum[1] + freq_sum[2];
 
 		if (total_sum) {
-			checker = total_sum / 4;
+			checker = total_sum / (4 + total_sum / 5000);
 			divider = 6 + total_sum / 1000;
-			// printk("divider: %d\n", divider);
+			// printk("check: %d div: %d\n", checker, divider);
+			// printk("total_sum: %d\n", total_sum);
 		}
 
 		for (i = 0; i < NUM_FREQ_BANDS; i++) {
@@ -271,7 +279,7 @@ static void microphone_init(void)
 		nrfx_pdm_init(&mic_cfg.pdm_config, pdm_event_handler));
 
 	if (err) {
-		printk("Initializing microphone failed.\n");
+		printk("Initializing microphone failed\n");
 	}
 
 	k_delayed_work_init(&mic_cfg.microphone_work, microphone_work_handler);
