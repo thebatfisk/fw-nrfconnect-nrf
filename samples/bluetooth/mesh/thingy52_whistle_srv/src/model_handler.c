@@ -14,26 +14,37 @@
 #include "model_handler.h"
 
 #define SPEAKER_PWM_FREQ 880
+#define RGB_WORK_ITEM_MAX 5
+
+void rgb_set_handler(struct bt_mesh_whistle_srv *srv,
+		     struct bt_mesh_msg_ctx *ctx,
+		     struct bt_mesh_whistle_rgb_msg rgb);
 
 struct devices {
 	struct device *io_expander;
 	struct device *gpio_0;
 	struct device *spkr_pwm;
 };
-static struct devices dev;
 
 struct rgb_work {
 	struct k_delayed_work work;
 	struct bt_mesh_whistle_rgb_msg rgb_msg;
 };
-static struct rgb_work rgb_work[5];
 
+struct orientation_change_ctx {
+	struct k_delayed_work work;
+	orientation_t orient;
+};
+
+static struct devices dev;
+static struct rgb_work rgb_work[RGB_WORK_ITEM_MAX];
+static struct orientation_change_ctx orient_change_work;
 static struct bt_mesh_whistle_rgb cur_rgb_vals;
-
-static inline int nrfx_err_code_check(nrfx_err_t nrfx_err)
-{
-	return NRFX_ERROR_BASE_NUM - nrfx_err ? true : false;
-}
+struct bt_mesh_whistle_cb handlers = {
+	.rgb_set_handler = rgb_set_handler,
+};
+static struct bt_mesh_whistle_srv whistle_srv =
+	BT_MESH_WHISTLE_SRV_INIT(&handlers);
 
 static int bind_devices(void)
 {
@@ -79,58 +90,11 @@ static void set_rgb_led(struct bt_mesh_whistle_rgb rgb)
 	cur_rgb_vals = rgb;
 }
 
-static struct k_delayed_work device_attention_work;
-
-static void device_attention(struct k_work *work)
-{
-	static uint8_t idx;
-	const struct bt_mesh_whistle_rgb colors[2] = {
-		{ .red = 0, .green = 0, .blue = 0 },
-		{ .red = 255, .green = 255, .blue = 255 },
-
-	};
-
-	set_rgb_led(colors[idx % (sizeof(colors) /
-				  sizeof(struct bt_mesh_whistle_rgb))]);
-	idx++;
-	k_delayed_work_submit(&device_attention_work, K_MSEC(400));
-}
-
-static void button_handler_cb(u32_t pressed, u32_t changed)
-{
-	if (pressed & BIT(0)) {
-		orientation_t orr = thingy52_orientation_get();
-		printk("Orientation: %d\n", orr);
-
-		switch (orr) {
-		case THINGY_ORIENT_X_UP:
-			break;
-		case THINGY_ORIENT_Y_UP:
-			break;
-		case THINGY_ORIENT_Y_DOWN:
-			break;
-		case THINGY_ORIENT_X_DOWN:
-			break;
-		case THINGY_ORIENT_Z_DOWN:
-			break;
-		case THINGY_ORIENT_Z_UP:
-			break;
-		default:
-			return;
-		}
-	}
-}
-
-static struct button_handler button_handler = {
-	.cb = button_handler_cb,
-};
-
 static void button_and_led_init(void)
 {
 	int err = 0;
 
 	err |= dk_buttons_init(NULL);
-	dk_button_handler_add(&button_handler);
 
 	for (int i = GREEN_LED; i <= RED_LED; i++) {
 		err |= sx1509b_pwm_pin_configure(dev.io_expander, i);
@@ -158,6 +122,107 @@ static void speaker_init(u32_t pwm_frequency)
 	}
 }
 
+static bool next_rgb_work_idx_get(uint8_t *idx)
+{
+	*idx = 0;
+	uint16_t top_delay = 0xFFFF;
+	bool active_work_present = false;
+
+	for (int i = 0; i < ARRAY_SIZE(rgb_work); ++i) {
+		int32_t rem = k_delayed_work_remaining_ticks(&rgb_work[i].work);
+
+		if ((rem != 0) && (rgb_work[i].rgb_msg.delay < top_delay)) {
+			*idx = i;
+			top_delay = rgb_work[i].rgb_msg.delay;
+			active_work_present = true;
+		}
+	}
+
+	return active_work_present;
+}
+
+static void rgb_work_output_set(void)
+{
+	uint8_t idx;
+	bool active_work_present = next_rgb_work_idx_get(&idx);
+
+	if (!active_work_present) {
+		k_delayed_work_cancel(&orient_change_work.work);
+	}
+
+	set_rgb_led(rgb_work[idx].rgb_msg.color);
+
+	if (rgb_work[idx].rgb_msg.speaker_on) {
+		gpio_pin_set_raw(dev.gpio_0, SPKR_PWR, 1);
+	} else {
+		gpio_pin_set_raw(dev.gpio_0, SPKR_PWR, 0);
+	}
+}
+
+static void rgb_msg_timeout(struct k_work *work)
+{
+	struct rgb_work *rgb = CONTAINER_OF(work, struct rgb_work, work.work);
+	uint8_t buffer_idx = rgb - &rgb_work[0];
+
+	if (rgb_work[buffer_idx].rgb_msg.ttl) {
+		rgb_work[buffer_idx].rgb_msg.ttl--;
+		bt_mesh_whistle_srv_rgb_set(&whistle_srv, NULL,
+					    &rgb_work[buffer_idx].rgb_msg);
+	}
+
+	memset(&rgb_work[buffer_idx].rgb_msg, 0,
+	       sizeof(struct bt_mesh_whistle_rgb_msg));
+	rgb_work_output_set();
+}
+
+static void orient_change_work_work_handler(struct k_work *work)
+{
+	struct orientation_change_ctx *orient_change_work =
+		CONTAINER_OF(work, struct orientation_change_ctx, work.work);
+	orientation_t orient = thingy52_orientation_get();
+
+	if (orient != orient_change_work->orient) {
+		for (int i = 0; i < ARRAY_SIZE(rgb_work); ++i) {
+			memset(&rgb_work[i].rgb_msg, 0,
+			sizeof(struct bt_mesh_whistle_rgb_msg));
+			k_delayed_work_cancel(&rgb_work[i].work);
+			rgb_work_output_set();
+		}
+	}
+
+	k_delayed_work_submit(&orient_change_work->work, K_MSEC(50));
+}
+
+void rgb_set_handler(struct bt_mesh_whistle_srv *srv,
+		     struct bt_mesh_msg_ctx *ctx,
+		     struct bt_mesh_whistle_rgb_msg rgb)
+{
+	if (rgb.delay == 0xFFFF) {
+		set_rgb_led(rgb.color);
+		k_delayed_work_submit(&led_fade_work, K_NO_WAIT);
+
+		return;
+	}
+
+	orient_change_work.orient = thingy52_orientation_get();
+	k_delayed_work_submit(&orient_change_work.work, K_MSEC(50));
+
+	for (int i = 0; i < ARRAY_SIZE(rgb_work); ++i) {
+		int32_t rem = k_delayed_work_remaining_ticks(&rgb_work[i].work);
+
+		if (rem == 0) {
+			memcpy(&rgb_work[i].rgb_msg, &rgb,
+			       sizeof(struct bt_mesh_whistle_rgb_msg));
+			k_delayed_work_submit(
+				&rgb_work[i].work,
+				K_MSEC(rgb_work[i].rgb_msg.delay));
+			rgb_work_output_set();
+
+			return;
+		}
+	}
+}
+
 /** Configuration server definition */
 static struct bt_mesh_cfg_srv cfg_srv = {
 	.relay = IS_ENABLED(CONFIG_BT_MESH_RELAY),
@@ -170,6 +235,23 @@ static struct bt_mesh_cfg_srv cfg_srv = {
 	.net_transmit = BT_MESH_TRANSMIT(2, 20),
 	.relay_retransmit = BT_MESH_TRANSMIT(2, 20),
 };
+
+static struct k_delayed_work device_attention_work;
+
+static void device_attention(struct k_work *work)
+{
+	static uint8_t idx;
+	const struct bt_mesh_whistle_rgb colors[2] = {
+		{ .red = 0, .green = 0, .blue = 0 },
+		{ .red = 255, .green = 255, .blue = 255 },
+
+	};
+
+	set_rgb_led(colors[idx % (sizeof(colors) /
+				  sizeof(struct bt_mesh_whistle_rgb))]);
+	idx++;
+	k_delayed_work_submit(&device_attention_work, K_MSEC(400));
+}
 
 static void attention_on(struct bt_mesh_model *mod)
 {
@@ -192,70 +274,6 @@ static struct bt_mesh_health_srv health_srv = {
 
 BT_MESH_HEALTH_PUB_DEFINE(health_pub, 0);
 
-static uint8_t next_rgb_work_idx_get(void)
-{
-	uint8_t idx = 0;
-	uint16_t top_delay = 0xFFFF;
-
-	for (int i = 0; i < ARRAY_SIZE(rgb_work); ++i) {
-		int32_t rem = k_delayed_work_remaining_ticks(&rgb_work[i].work);
-
-		if ((rem != 0) && (rgb_work[i].rgb_msg.delay < top_delay)) {
-			idx = i;
-			top_delay = rgb_work[i].rgb_msg.delay;
-		}
-	}
-
-	return idx;
-}
-
-static void rgb_work_output_set(void)
-{
-	uint8_t idx = next_rgb_work_idx_get();
-
-	set_rgb_led(rgb_work[idx].rgb_msg.color);
-
-	if (rgb_work[idx].rgb_msg.speaker_on) {
-		gpio_pin_set_raw(dev.gpio_0, SPKR_PWR, 1);
-	} else {
-		gpio_pin_set_raw(dev.gpio_0, SPKR_PWR, 0);
-	}
-}
-
-void rgb_set_handler(struct bt_mesh_whistle_srv *srv,
-		     struct bt_mesh_msg_ctx *ctx,
-		     struct bt_mesh_whistle_rgb_msg rgb)
-{
-	if (rgb.delay == 0xFFFF) {
-		set_rgb_led(rgb.color);
-		k_delayed_work_submit(&led_fade_work, K_NO_WAIT);
-
-		return;
-	}
-
-	for (int i = 0; i < ARRAY_SIZE(rgb_work); ++i) {
-		int32_t rem = k_delayed_work_remaining_ticks(&rgb_work[i].work);
-
-		if (rem == 0) {
-			memcpy(&rgb_work[i].rgb_msg, &rgb,
-			       sizeof(struct bt_mesh_whistle_rgb_msg));
-			k_delayed_work_submit(
-				&rgb_work[i].work,
-				K_MSEC(rgb_work[i].rgb_msg.delay));
-			rgb_work_output_set();
-
-			return;
-		}
-	}
-}
-
-struct bt_mesh_whistle_cb handlers = {
-	.rgb_set_handler = rgb_set_handler,
-};
-
-static struct bt_mesh_whistle_srv whistle_srv =
-	BT_MESH_WHISTLE_SRV_INIT(&handlers);
-
 static struct bt_mesh_elem elements[] = {
 	BT_MESH_ELEM(1,
 		     BT_MESH_MODEL_LIST(BT_MESH_MODEL_CFG_SRV(&cfg_srv),
@@ -273,22 +291,6 @@ static const struct bt_mesh_comp comp = {
 	.elem_count = ARRAY_SIZE(elements),
 };
 
-static void rgb_msg_timeout(struct k_work *work)
-{
-	struct rgb_work *rgb = CONTAINER_OF(work, struct rgb_work, work.work);
-	uint8_t buffer_idx = rgb - &rgb_work[0];
-
-	if (rgb_work[buffer_idx].rgb_msg.ttl) {
-		rgb_work[buffer_idx].rgb_msg.ttl--;
-		bt_mesh_whistle_srv_rgb_set(&whistle_srv, NULL,
-					    &rgb_work[buffer_idx].rgb_msg);
-	}
-
-	memset(&rgb_work[buffer_idx].rgb_msg, 0,
-	       sizeof(struct bt_mesh_whistle_rgb_msg));
-	rgb_work_output_set();
-}
-
 const struct bt_mesh_comp *model_handler_init(void)
 {
 	if (bind_devices()) {
@@ -297,6 +299,7 @@ const struct bt_mesh_comp *model_handler_init(void)
 	}
 
 	k_delayed_work_init(&device_attention_work, device_attention);
+	k_delayed_work_init(&orient_change_work.work, orient_change_work_work_handler);
 	for (int i = 0; i < ARRAY_SIZE(rgb_work); ++i) {
 		k_delayed_work_init(&rgb_work[i].work, rgb_msg_timeout);
 	}
