@@ -1,0 +1,5 @@
+*** Must be run in PowerShell ***
+
+To make the ethernet connection private:
+
+Set-NetConnectionProfile -InterfaceAlias "Ethernet" -NetworkCategory Private

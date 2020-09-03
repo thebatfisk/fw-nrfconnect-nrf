@@ -35,6 +35,8 @@ manifest:
       url-base: https://github.com/alexa
     - name: nordicsemi
       url-base: https://github.com/NordicSemiconductor
+    - name: thebatfisk
+      url-base: https://github.com/thebatfisk
 
   # If not otherwise specified, the projects below should be obtained
   # from the ncs remote.
@@ -145,6 +147,10 @@ manifest:
       remote: nordicsemi
       revision: 24f1b2b0c64c694b7f9ac1b7eab60b39236ca0bf
       path: modules/lib/cddl-gen
+    - name: wiznet
+      path: modules/hal/wiznet
+      revision: 42d44971987a3b3049f5624314c73353645d8404
+      remote: thebatfisk
 
   # West-related configuration for the nrf repository.
   self:

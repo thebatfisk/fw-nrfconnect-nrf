@@ -1,0 +1,9 @@
+sample:
+  name: PCA20036
+  description: PCA20036
+tests:
+  samples.bluetooth.mesh.pca20036:
+    build_only: true
+    build_on_all: true
+    platform_whitelist: pca20036_nrf52840
+    tags: bluetooth ci_build
