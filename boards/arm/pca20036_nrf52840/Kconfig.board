@@ -1,0 +1,9 @@
+#
+# Copyright (c) 2021 Nordic Semiconductor
+#
+# SPDX-License-Identifier: LicenseRef-BSD-5-Clause-Nordic
+#
+
+config BOARD_PCA20036_NRF52840
+	bool "PCA20036 NRF52840"
+	depends on SOC_NRF52840_QIAA
