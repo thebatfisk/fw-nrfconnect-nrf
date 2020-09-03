@@ -29,6 +29,8 @@ manifest:
       url-base: https://github.com/ThrowTheSwitch
     - name: armmbed
       url-base: https://github.com/ARMmbed
+    - name: thebatfisk
+      url-base: https://github.com/thebatfisk
 
   # If not otherwise specified, the projects below should be obtained
   # from the ncs remote.
@@ -112,6 +114,10 @@ manifest:
       repo-path: mbedtls
       revision: mbedtls-2.16.6
       remote: armmbed
+    - name: wiznet
+      path: modules/hal/wiznet
+      revision: 42d44971987a3b3049f5624314c73353645d8404
+      remote: thebatfisk
 
   # West-related configuration for the nrf repository.
   self:
