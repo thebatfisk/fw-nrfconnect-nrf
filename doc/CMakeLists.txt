@@ -69,7 +69,7 @@ set(MCUBOOT_BINARY_DIR ${CMAKE_BINARY_DIR}/mcuboot)
 set(NRFXLIB_BINARY_DIR ${CMAKE_BINARY_DIR}/nrfxlib)
 
 # Output directory for the shared Kconfig documentation
-set(KCONFIG_BINARY_DIR ${CMAKE_BINARY_DIR}/Kconfig)
+set(KCONFIG_BINARY_DIR ${CMAKE_BINARY_DIR}/kconfig)
 
 # HTML output directory
 set(HTML_DIR ${CMAKE_BINARY_DIR}/html)
@@ -404,7 +404,7 @@ add_custom_target(
     ARCH=*
     ARCH_DIR=arch/
     SOC_DIR=soc/
-    KCONFIG_BINARY_DIR=${KCONFIG_BINARY_DIR}
+    CMAKE_BINARY_DIR=${CMAKE_BINARY_DIR}
     KCONFIG_WARN_UNDEF=y
     KCONFIG_TURBO_MODE=${KCONFIG_TURBO_MODE}
     KCONFIG_DOC_MODE=1

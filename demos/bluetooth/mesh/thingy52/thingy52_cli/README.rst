@@ -36,7 +36,7 @@ The following table shows the Thingy:52 client composition data for this demo:
    =================  ===============
    Element 1          Element 2
    =================  ===============
-   Config Server      Thingy:52 client
+   Config Server      Thingy:52 Client
    Health Server
    =================  ===============
 
@@ -65,9 +65,23 @@ device and configured according to the :ref:`bluetooth_mesh_thingy52_srv_testing
 User interface
 **************
 
-The user interface of this demo is created by combining the functionality of the Thingy:52 button and the
+Large RGB LED:
+   Show the current manually selected RGB color for outgoing RGB messages. Also indicates RGB message delay by blinking
+   frequency.
+
+Small RGB LED:
+   Show if speaker output for outgoing RGB messages is enabled
+
+The user input interface of this demo is created by combining the functionality of the Thingy:52 button and the
 integrated low power accelerometer. Together they create a button handler that can control different features
 depending on the orientation of the Thingy:52 device.
+
+Low Power accelerometer:
+   Used to detect the orientation of the Thingy:52 device. Combined with the button it desides what iput action to
+   execute.
+
+Button:
+   Executes input command related to the current orientation of the Thingy:52 device.
 
 Thingy:52 orientations
 =====================
@@ -130,7 +144,7 @@ Complete the following steps in the nRF Mesh app to configure models:
 #. Configure the Client model publish parameters, which define how the model will send its messages:
 
    1. Tap :guilabel:`SET PUBLICATION`.
-   #. Set the Publish Address to the unicast address a of the Thingy:52 server model on another device.
+   #. Set the Publish Address to the unicast address of a Thingy:52 server model on another device.
    #. Set the Retransmit Count to zero (:guilabel:`Disabled`) to prevent the model from sending each message multiple times.
    #. Leave the rest of the publish parameters at their default values.
    #. Tap :guilabel:`APPLY` to confirm the configuration.
@@ -171,6 +185,7 @@ This sample uses the following |NCS| libraries:
 It also uses the following custom libraries:
 
 * :ref:`bt_mesh_thingy52_cli_readme`
+* :ref:`bt_mesh_thingy52_orientation_handler`
 
 In addition, it uses the following Zephyr libraries:
 

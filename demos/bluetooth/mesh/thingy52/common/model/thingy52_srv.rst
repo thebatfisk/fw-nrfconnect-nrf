@@ -22,7 +22,7 @@ Color: :cpp:type:`bt_mesh_thingy52_rgb`
 Speaker On: ``boolean``
 	The Speaker On state determines if a message should support speaker output.
 
-All state is assosiated with a single message, and is accessed by your application through the :cpp:type:`rgb_set_handler` handler.
+All state is assosiated with a single message, and is accessed by your application through the :cpp:type:`rgb_set_handler`.
 It is expected that your application holds the state of each induvidual message, and handles them according
 to your applications spesification.
 
