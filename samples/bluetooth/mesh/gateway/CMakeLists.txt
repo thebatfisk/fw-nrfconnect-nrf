@@ -9,5 +9,6 @@ find_package(Zephyr REQUIRED HINTS $ENV{ZEPHYR_BASE})
 project(NONE)
 
 target_sources(app PRIVATE
-	src/main.c)
+	src/main.c
+	src/gw_provisioning.c)
 target_include_directories(app PRIVATE include)
