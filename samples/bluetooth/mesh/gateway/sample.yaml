@@ -1,0 +1,9 @@
+sample:
+  name: Bluetooth Mesh Gateway
+  description: Bluetooth Mesh Gateway
+tests:
+  samples.bluetooth.mesh.gateway:
+    build_only: true
+    build_on_all: true
+    platform_whitelist: nrf52dk_nrf52832
+    tags: bluetooth ci_build
