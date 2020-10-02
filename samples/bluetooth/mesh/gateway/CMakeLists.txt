@@ -10,5 +10,6 @@ project(NONE)
 
 target_sources(app PRIVATE
 	src/main.c
-	src/gw_provisioning.c)
+	src/gw_provisioning.c
+	src/gw_nfc.c)
 target_include_directories(app PRIVATE include)

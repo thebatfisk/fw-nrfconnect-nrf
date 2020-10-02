@@ -11,6 +11,7 @@
 // #include <bluetooth/mesh/dk_prov.h>
 #include <dk_buttons_and_leds.h>
 #include "gw_provisioning.h"
+#include "gw_nfc.h"
 
 K_SEM_DEFINE(sem_button, 0, 1);
 
@@ -44,6 +45,8 @@ void main(void)
 	printk("Bluetooth Mesh Gateway initializing...\n");
 
 	dk_buttons_init(button_handler);
+
+	gw_nfc_init();
 
 	/* Initialize the Bluetooth Subsystem */
 	err = bt_enable(NULL);
