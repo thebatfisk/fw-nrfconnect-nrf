@@ -26,8 +26,8 @@
 #include <zephyr.h>
 #include "gw_display_shield.h"
 
-static uint8_t _data_pins[4] = {12, 11, 10, 9};
-static uint8_t _button_pins[5] = {0, 1, 2, 3, 4};
+static uint8_t _data_pins[4] = { 12, 11, 10, 9 };
+static uint8_t _button_pins[5] = { 0, 1, 2, 3, 4 };
 static uint8_t _enable_pin = 13; // activated by a HIGH pulse
 static uint8_t _rw_pin = 14; // LOW: write to LCD  HIGH: read from LCD
 static uint8_t _rs_pin = 15; // LOW: command  HIGH: character
@@ -53,7 +53,7 @@ void display_shield_init(void)
 	mcp23017_write_pin(7, LOW);
 	// display_set_backlight(0x0); // NO NOT WORK PROPERLY FOR PIN B (8->)
 
-    /* Configuring display controlling/writing pins */
+	/* Configuring display controlling/writing pins */
 	mcp23017_pin_configure(_rw_pin, OUTPUT);
 	mcp23017_pin_configure(_rs_pin, OUTPUT);
 	mcp23017_pin_configure(_enable_pin, OUTPUT);
@@ -219,6 +219,22 @@ void display_create_char(uint8_t location, uint8_t charmap[])
 	command(LCD_SETDDRAMADDR);
 }
 
+/* Write a character to the display */
+void display_write_char(char character)
+{
+	display_write(character);
+}
+
+/* Write a string to the display */
+void display_write_string(char *str)
+{
+	unsigned char i = 0;
+
+	while (str[i] != '\0') {
+		display_write(str[i++]);
+	}
+}
+
 void command(uint8_t value)
 {
 	send(value, LOW);
@@ -232,7 +248,9 @@ void display_write(uint8_t value)
 /* Allows to set the backlight, if the LCD backpack is used */
 void display_set_backlight(uint8_t status)
 {
-	mcp23017_write_pin(8, ~(status >> 2) & 0x1); // ******** THIS DOES NOT WORK PROPERLY ********
+	mcp23017_write_pin(
+		8, ~(status >>
+		     2) & 0x1); // ******** THIS DOES NOT WORK PROPERLY ********
 	mcp23017_write_pin(7, ~(status >> 1) & 0x1);
 	mcp23017_write_pin(6, ~status & 0x1);
 }
@@ -282,12 +300,16 @@ static void write4bits(uint8_t value)
 	k_sleep(K_USEC(100));
 }
 
-uint8_t display_read_buttons(void) // TODO: Check that it works
+uint8_t display_read_buttons(void)
 {
+	uint8_t ret;
 	uint8_t reply = 0;
 
 	for (uint8_t i = 0; i < 5; i++) {
-		reply &= ~((mcp23017_read_pin(_button_pins[i])) << i);
+		mcp23017_read_pin(_button_pins[i], &ret);
+		reply |= (ret << i);
+		reply ^= (1 << i);
 	}
+
 	return reply;
 }

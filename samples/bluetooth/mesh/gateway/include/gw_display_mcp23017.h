@@ -55,7 +55,7 @@ void mcp23017_write_pin(uint8_t p, uint8_t d);
 
 void mcp23017_pull_up(uint8_t p, uint8_t d);
 
-uint8_t mcp23017_read_pin(uint8_t p);
+void mcp23017_read_pin(uint8_t p, uint8_t *ret);
 
 void mcp23017_write_gpio_ab(uint16_t);
 

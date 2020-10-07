@@ -144,6 +144,17 @@ void display_set_backlight(uint8_t status);
 void display_create_char(uint8_t, uint8_t[]);
 
 /*!
+* @brief Write a character to the display
+* @param character The character
+*/
+void display_write_char(char character);
+/*!
+* @brief Write a string to the display
+* @param str The string
+*/
+void display_write_string(char *str);
+
+/*!
 * @brief Mid-level command that sends data to the display
 * @param value Data to send to the display
 */
