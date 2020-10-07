@@ -2,7 +2,6 @@
 #define GW_DISPLAY_SHIELD_H__
 
 #include <zephyr.h>
-#include <inttypes.h> // TODO: Remove?
 #include "gw_display_mcp23017.h"
 
 // commands
@@ -56,7 +55,7 @@
 /*!
 * @brief Init RGB LCD shield
 */
-void display_init(void);
+void display_shield_init(void);
 
 /*!
 * @brief Starts I2C connection with display
@@ -70,11 +69,11 @@ void display_begin(uint8_t cols, uint8_t rows, uint8_t charsize);
 /*!
 * @brief High-level command to clear the display
 */
-void display_clear();
+void display_clear(void);
 /*!
 * @brief High-level command to set the cursor position to zero
 */
-void display_home();
+void display_home(void);
 /*!
 * @brief High-level command to set the cursor position
 * @param col Column
@@ -84,51 +83,51 @@ void display_set_cursor(uint8_t col, uint8_t row);
 /*!
 * @brief High-level command to turn the display off
 */
-void display_no_display();
+void display_off(void);
 /*!
 * @brief High-level command to turn the display on
 */
-void display_on();
+void display_on(void);
 /*!
 * @brief High-level command to turn off the blinking cursor off
 */
-void display_no_blink();
+void display_blink_off(void);
 /*!
 * @brief High-level command to turn on the blinking cursor
 */
-void display_blink();
+void display_blink_on(void);
 /*!
 * @brief High-level command to turn the underline cursor off
 */
-void display_no_cursor();
+void display_cursor_off(void);
 /*!
 * @brief High-level command to turn the underline cursor on
 */
-void display_cursor();
+void display_cursor_on(void);
 /*!
 * @brief High-level command to scroll display left without changing the RAM
 */
-void display_scroll_display_left();
+void display_scroll_display_left(void);
 /*!
 * @brief High-level command to scroll display right without changing the RAM
 */
-void display_scroll_display_right();
+void display_scroll_display_right(void);
 /*!
 * @brief High-level command to make text flow right to left
 */
-void display_left_to_right();
+void display_left_to_right(void);
 /*!
 * @brief High-level command to make text flow left to right
 */
-void display_right_to_left();
+void display_right_to_left(void);
 /*!
 * @brief High-level command to 'right justify' text from cursor
 */
-void display_autoscroll();
+void display_autoscroll(void);
 /*!
 * @brief High-level command to 'left justify' text from cursor
 */
-void display_no_autoscroll();
+void display_no_autoscroll(void);
 
 /*!
 * @brief High-level command to set the backlight, only if the LCD backpack is
@@ -143,22 +142,6 @@ void display_set_backlight(uint8_t status);
 * @param charmap[] Character map to use
 */
 void display_create_char(uint8_t, uint8_t[]);
-/*!
-* @brief High-level command that sets the location of the cursor
-* @param col Column to put the cursor in
-* @param row Row to put the cursor in
-*/
-
-// TODO: Remove this?
-// #if ARDUINO >= 100
-// 	virtual size_t write(uint8_t);
-// #else
-// 	/*!
-//    * @brief Mid-level command that sends data to the display
-//    * @param value Data to send to the display
-//    */
-// 	virtual void write(uint8_t);
-// #endif
 
 /*!
 * @brief Mid-level command that sends data to the display
@@ -171,10 +154,11 @@ void display_write(uint8_t value);
 * @param value Command to send
 */
 void command(uint8_t);
+
 /*!
 * @brief reads the buttons from the shield
 * @return Returns what buttons have been pressed
 */
-uint8_t display_read_buttons();
+uint8_t display_read_buttons(void);
 
 #endif /* GW_DISPLAY_SHIELD_H__ */

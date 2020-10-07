@@ -24,207 +24,152 @@
  */
 
 #include <zephyr.h>
-#include <inttypes.h> // TODO: Remove?
-#include <stdio.h> // TODO: Remove?
-#include <string.h> // TODO: Remove?
 #include "gw_display_shield.h"
 
-// When the display powers up, it is configured as follows:
-//
-// 1. Display clear
-// 2. Function set:
-//    DL = 1; 8-bit interface data
-//    N = 0; 1-line display
-//    F = 0; 5x8 dot character font
-// 3. Display on/off control:
-//    D = 0; Display off
-//    C = 0; Cursor off
-//    B = 0; Blinking off
-// 4. Entry mode set:
-//    I/D = 1; Increment by 1
-//    S = 0; No shift
-//
-
-static uint8_t _rs_pin = 15; // LOW: command.  HIGH: character.
-static uint8_t _rw_pin = 14; // LOW: write to LCD.  HIGH: read from LCD.
-static uint8_t _enable_pin = 13; // activated by a HIGH pulse.
-static uint8_t _data_pins[4] = {12, 11, 10, 9}; // TODO: Correct?
-static uint8_t _button_pins[5] = {0, 1, 2, 3, 4}; // TODO: Correct?
-static uint8_t _displayfunction = LCD_4BITMODE | LCD_2LINE | LCD_5x8DOTS; // TODO: Looks like everything needed is defined here?
+static uint8_t _data_pins[4] = {12, 11, 10, 9};
+static uint8_t _button_pins[5] = {0, 1, 2, 3, 4};
+static uint8_t _enable_pin = 13; // activated by a HIGH pulse
+static uint8_t _rw_pin = 14; // LOW: write to LCD  HIGH: read from LCD
+static uint8_t _rs_pin = 15; // LOW: command  HIGH: character
+static uint8_t _displayfunction = LCD_4BITMODE | LCD_2LINE | LCD_5x8DOTS;
 static uint8_t _displaycontrol;
 static uint8_t _displaymode;
 
-uint8_t _initialized; // TODO: Remove?
+static uint8_t _numlines = 2;
 
-uint8_t _numlines, _currline;
-
-uint8_t _i2cAddr = 0; // TODO: Remove this variable?
-
-static void _digitalWrite(uint8_t p, uint8_t d); // TODO: Change name
-static void _pinMode(uint8_t p, uint8_t d); // TODO: Change name?
 static void send(uint8_t value, uint8_t mode);
 static void write4bits(uint8_t value);
 
-void display_init(void) // TODO: Rename to shield_init?
+void display_shield_init(void)
 {
 	mcp23017_init();
 
-	display_begin(16, 2, LCD_5x8DOTS);
-}
-
-void display_begin(uint8_t cols, uint8_t lines, uint8_t dotsize)
-{
-	// check if i2c
-	// printk("*** DISPLAY BEGIN ***\n");
-	mcp23017_begin(_i2cAddr);
-
-	// Controlling the 3 backlight RBG LEDs
-	mcp23017_pinMode(8, OUTPUT); // TODO: Give pins name? pin_configure?
-	mcp23017_pinMode(6, OUTPUT);
-	mcp23017_pinMode(7, OUTPUT);
-	// mcp23017_digitalWrite(8, HIGH);
-	mcp23017_digitalWrite(6, LOW);
-	mcp23017_digitalWrite(7, LOW);
-
-	uint16_t test_out = 0;
-
-	// test_out = mcp23017_readGPIOAB();
-
-	// // test_out &= ~(1 << 8);
-	// // test_out &= ~(1 << 7);
-	// // test_out &= ~(1 << 6);
-
-	// // test_out |= (1 << 7);
-	// // test_out |= (1 << 6);
-	// // test_out |= (1 << 8);
-
-	// mcp23017_writeGPIOAB(test_out);
-
+	/* Controlling the 3 backlight RBG LEDs */
+	mcp23017_pin_configure(8, OUTPUT);
+	mcp23017_pin_configure(6, OUTPUT);
+	mcp23017_pin_configure(7, OUTPUT);
+	// mcp23017_write_pin(8, HIGH);
+	mcp23017_write_pin(6, LOW);
+	mcp23017_write_pin(7, LOW);
 	// display_set_backlight(0x0); // NO NOT WORK PROPERLY FOR PIN B (8->)
 
-	mcp23017_pinMode(_rw_pin, OUTPUT);
-
-	mcp23017_pinMode(_rs_pin, OUTPUT);
-	mcp23017_pinMode(_enable_pin, OUTPUT);
+    /* Configuring display controlling/writing pins */
+	mcp23017_pin_configure(_rw_pin, OUTPUT);
+	mcp23017_pin_configure(_rs_pin, OUTPUT);
+	mcp23017_pin_configure(_enable_pin, OUTPUT);
 	for (uint8_t i = 0; i < 4; i++) {
-		mcp23017_pinMode(_data_pins[i], OUTPUT);
+		mcp23017_pin_configure(_data_pins[i], OUTPUT);
 	}
 
+	/* Configuring button pins */
 	for (uint8_t i = 0; i < 5; i++) {
-		mcp23017_pinMode(_button_pins[i], INPUT);
-		mcp23017_pullUp(_button_pins[i], HIGH);
+		mcp23017_pin_configure(_button_pins[i], INPUT);
+		mcp23017_pull_up(_button_pins[i], HIGH);
 	}
 
-	_numlines = lines;
-	_currline = 0;
-
-	// SEE PAGE 45/46 FOR INITIALIZATION SPECIFICATION!
-	// according to datasheet, we need at least 40ms after power rises above 2.7V
-	// before sending commands. Arduino can turn on way befer 4.5V so we'll wait
-	// 50
+	/* SEE PAGE 45/46 FOR INITIALIZATION SPECIFICATION!
+	 * according to datasheet, we need at least 40ms after power rises above 2.7V
+	 * before sending commands. Arduino can turn on way befer 4.5V so we'll wait
+	 * 50
+	 */
 	k_sleep(K_USEC(50000));
-	// Now we pull both RS and R/W low to begin commands
-	// _digitalWrite(_rs_pin, LOW); ***
-	_digitalWrite(_enable_pin, LOW);
-	printk("*** rw_pin: %d ***\n", _rw_pin);
-	_digitalWrite(_rw_pin, LOW);
+	/* Pull both RS and R/W low to begin commands */
+	// mcp23017_write_pin(_rs_pin, LOW); // Does not work properly
+	mcp23017_write_pin(_enable_pin, LOW); // May not work properly
+	mcp23017_write_pin(_rw_pin, LOW); // May not work properly
 
-	// put the LCD into 4 bit or 8 bit mode
-	printk("4 BIT!\n");
-	// this is according to the hitachi HD44780 datasheet
-	// figure 24, pg 46
+	/* Put the LCD into 4 bit according to the hitachi HD44780 datasheet figure 24, pg 46 */
 
-	// we start in 8bit mode, try to set 4 bit mode
+	/* Start in 8bit mode, try to set 4 bit mode */
 	write4bits(0x03);
 	k_sleep(K_USEC(4500)); // wait min 4.1ms
 
-	// second try
+	/* Second try */
 	write4bits(0x03);
 	k_sleep(K_USEC(4500)); // wait min 4.1ms
 
-	// third go!
+	/* Third go */
 	write4bits(0x03);
 	k_sleep(K_USEC(150));
 
-	// finally, set to 8-bit interface
+	/* Finally, set to 8-bit interface */
 	write4bits(0x02);
 
-	// finally, set # lines, font size, etc.
+	/* Set # lines, font size, etc. */
 	command(LCD_FUNCTIONSET | _displayfunction);
 
-	// turn the display on with no cursor or blinking default
+	/* Turn the display on with no cursor or blinking default */
 	_displaycontrol = LCD_DISPLAYON | LCD_CURSOROFF | LCD_BLINKOFF;
 	display_on();
 
-	// clear it off
+	/* Clear it off */
 	display_clear();
 
-	// Initialize to default text direction (for romance languages)
+	/* Initialize to default text direction (for romance languages) */
 	_displaymode = LCD_ENTRYLEFT | LCD_ENTRYSHIFTDECREMENT;
-	// set the entry mode
+	/* Set the entry mode */
 	command(LCD_ENTRYMODESET | _displaymode);
 }
 
-/********** high level commands, for the user! */
-void display_clear()
+void display_clear(void)
 {
-	command(LCD_CLEARDISPLAY); // clear display, set cursor position to zero
-	k_sleep(K_USEC(2000)); // this command takes a long time!
+	command(LCD_CLEARDISPLAY);
+	/* Clearing display takes long time */
+	k_sleep(K_USEC(2000));
 }
 
-void display_home()
+void display_home(void)
 {
-	command(LCD_RETURNHOME); // set cursor position to zero
-	k_sleep(K_USEC(2000)); // this command takes a long time!
+	command(LCD_RETURNHOME);
+	/* Returning home takes long time */
+	k_sleep(K_USEC(2000));
 }
 
 void display_set_cursor(uint8_t col, uint8_t row)
 {
 	int row_offsets[] = { 0x00, 0x40, 0x14, 0x54 };
 	if (row > _numlines) {
-		row = _numlines - 1; // we count rows starting w/0
+		row = _numlines - 1;
 	}
 
 	command(LCD_SETDDRAMADDR | (col + row_offsets[row]));
 }
 
-// Turn the display on/off (quickly)
-void display_no_display() // TODO: Off
+void display_off(void)
 {
 	_displaycontrol &= ~LCD_DISPLAYON;
 	command(LCD_DISPLAYCONTROL | _displaycontrol);
 }
-void display_on()
+void display_on(void)
 {
 	_displaycontrol |= LCD_DISPLAYON;
 	command(LCD_DISPLAYCONTROL | _displaycontrol);
 }
 
-// Turns the underline cursor on/off
-void display_no_cursor()
+void display_cursor_off(void)
 {
 	_displaycontrol &= ~LCD_CURSORON;
 	command(LCD_DISPLAYCONTROL | _displaycontrol);
 }
-void display_cursor()
+void display_cursor_on(void)
 {
 	_displaycontrol |= LCD_CURSORON;
 	command(LCD_DISPLAYCONTROL | _displaycontrol);
 }
 
-// Turn on and off the blinking cursor
-void display_no_blink()
+/* Turn on and off blinking cursor */
+void display_blink_off(void)
 {
 	_displaycontrol &= ~LCD_BLINKON;
 	command(LCD_DISPLAYCONTROL | _displaycontrol);
 }
-void display_blink()
+void display_blink_on(void)
 {
 	_displaycontrol |= LCD_BLINKON;
 	command(LCD_DISPLAYCONTROL | _displaycontrol);
 }
 
-// These commands scroll the display without changing the RAM
+/* These commands scroll the display without changing the RAM */
 void display_scroll_display_left(void)
 {
 	command(LCD_CURSORSHIFT | LCD_DISPLAYMOVE | LCD_MOVELEFT);
@@ -234,36 +179,35 @@ void display_scroll_display_right(void)
 	command(LCD_CURSORSHIFT | LCD_DISPLAYMOVE | LCD_MOVERIGHT);
 }
 
-// This is for text that flows Left to Right
+/* This is for text that flows Left to Right */
 void display_left_to_right(void)
 {
 	_displaymode |= LCD_ENTRYLEFT;
 	command(LCD_ENTRYMODESET | _displaymode);
 }
 
-// This is for text that flows Right to Left
+/* This is for text that flows Right to Left */
 void display_right_to_left(void)
 {
 	_displaymode &= ~LCD_ENTRYLEFT;
 	command(LCD_ENTRYMODESET | _displaymode);
 }
 
-// This will 'right justify' text from the cursor
+/* This will 'right justify' text from the cursor */
 void display_autoscroll(void)
 {
 	_displaymode |= LCD_ENTRYSHIFTINCREMENT;
 	command(LCD_ENTRYMODESET | _displaymode);
 }
 
-// This will 'left justify' text from the cursor
+/* This will 'left justify' text from the cursor */
 void display_no_autoscroll(void)
 {
 	_displaymode &= ~LCD_ENTRYSHIFTINCREMENT;
 	command(LCD_ENTRYMODESET | _displaymode);
 }
 
-// Allows us to fill the first 8 CGRAM locations
-// with custom characters
+/* Fill the first 8 CGRAM locations with custom characters */
 void display_create_char(uint8_t location, uint8_t charmap[])
 {
 	location &= 0x7; // we only have 8 locations 0-7
@@ -271,10 +215,9 @@ void display_create_char(uint8_t location, uint8_t charmap[])
 	for (int i = 0; i < 8; i++) {
 		display_write(charmap[i]);
 	}
-	command(LCD_SETDDRAMADDR); // unfortunately resets the location to 0,0
+	/* Unfortunately resets the location to 0,0 */
+	command(LCD_SETDDRAMADDR);
 }
-
-/*********** mid level commands, for sending data/cmds */
 
 void command(uint8_t value)
 {
@@ -286,90 +229,65 @@ void display_write(uint8_t value)
 	send(value, HIGH);
 }
 
-/************ low level data pushing commands **********/
-
-// little wrapper for i/o writes
-static void _digitalWrite(uint8_t p, uint8_t d) // TODO: Remove
-{
-	mcp23017_digitalWrite(p, d);
-}
-
-// Allows to set the backlight, if the LCD backpack is used
+/* Allows to set the backlight, if the LCD backpack is used */
 void display_set_backlight(uint8_t status)
 {
-	// check if i2c or SPI
-	mcp23017_digitalWrite(8, ~(status >> 2) & 0x1); // ******** THIS DOES NOT WORK PROPERLY ********
-	mcp23017_digitalWrite(7, ~(status >> 1) & 0x1);
-	mcp23017_digitalWrite(6, ~status & 0x1);
+	mcp23017_write_pin(8, ~(status >> 2) & 0x1); // ******** THIS DOES NOT WORK PROPERLY ********
+	mcp23017_write_pin(7, ~(status >> 1) & 0x1);
+	mcp23017_write_pin(6, ~status & 0x1);
 }
 
-// little wrapper for i/o directions
-static void _pinMode(uint8_t p, uint8_t d) // TODO: Change name?
-{
-	mcp23017_pinMode(p, d);
-}
-
-// write either command or data, with automatic 4/8-bit selection
 static void send(uint8_t value, uint8_t mode)
 {
-	// printk("send: %d\n", value);
+	// mcp23017_write_pin(_rs_pin, mode); // *** THE PROBLEM IS THAT THIS NEVER GOES HIGH ***
 
-	// _digitalWrite(_rs_pin, mode); // TODO: *** IS THE PROBLEM THAT THIS NEVER GOES HIGH? ***
-
+	/* Hack */
 	if (mode == LOW) {
-		mcp23017_pinMode(_rs_pin, OUTPUT);
+		mcp23017_pin_configure(_rs_pin, OUTPUT);
 	} else {
-		mcp23017_pinMode(_rs_pin, INPUT);
+		mcp23017_pin_configure(_rs_pin, INPUT);
 	}
+	/* **** */
 
-	// if there is a RW pin indicated, set it low to Write
-	if (_rw_pin != 255) {
-		_digitalWrite(_rw_pin, LOW);
-	}
+	mcp23017_write_pin(_rw_pin, LOW);
 
 	write4bits(value >> 4);
 	write4bits(value);
-
-	// _digitalWrite(_rs_pin, LOW);
 }
 
 static void write4bits(uint8_t value)
 {
 	uint16_t out = 0;
 
-	out = mcp23017_readGPIOAB();
+	out = mcp23017_read_gpio_ab();
 
-	printk("OUT BEFORE: %d\n", out);
-
-	// speed up for i2c since its sluggish
+	/* Speed up for i2c since its sluggish */
 	for (int i = 0; i < 4; i++) {
 		out &= ~(1 << _data_pins[i]);
 		out |= ((value >> i) & 0x1) << _data_pins[i];
 	}
 
-	// make sure enable is low
+	/* Make sure enable is low */
 	out &= ~(1 << _enable_pin);
 
-	printk("OUT AFTER: %d\n", out);
+	mcp23017_write_gpio_ab(out);
 
-	mcp23017_writeGPIOAB(out);
-
-	// pulse enable
+	/* Pulse enable */
 	k_sleep(K_USEC(1));
 	out |= (1 << _enable_pin);
-	mcp23017_writeGPIOAB(out);
+	mcp23017_write_gpio_ab(out);
 	k_sleep(K_USEC(1));
 	out &= ~(1 << _enable_pin);
-	mcp23017_writeGPIOAB(out);
+	mcp23017_write_gpio_ab(out);
 	k_sleep(K_USEC(100));
 }
 
-uint8_t display_read_buttons(void)
+uint8_t display_read_buttons(void) // TODO: Check that it works
 {
 	uint8_t reply = 0;
 
 	for (uint8_t i = 0; i < 5; i++) {
-		reply &= ~((mcp23017_digitalRead(_button_pins[i])) << i);
+		reply &= ~((mcp23017_read_pin(_button_pins[i])) << i);
 	}
 	return reply;
 }

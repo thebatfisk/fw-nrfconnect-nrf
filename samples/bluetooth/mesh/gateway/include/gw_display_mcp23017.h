@@ -16,16 +16,6 @@
 
 #include <zephyr.h>
 
-// TODO: Change some function names?
-void mcp23017_init(void);
-void mcp23017_begin(uint8_t addr);
-void mcp23017_pinMode(uint8_t p, uint8_t d);
-void mcp23017_digitalWrite(uint8_t p, uint8_t d);
-void mcp23017_pullUp(uint8_t p, uint8_t d);
-uint8_t mcp23017_digitalRead(uint8_t p);
-void mcp23017_writeGPIOAB(uint16_t);
-uint16_t mcp23017_readGPIOAB();
-
 #define INPUT 0
 #define OUTPUT 1
 #define LOW 0
@@ -33,7 +23,6 @@ uint16_t mcp23017_readGPIOAB();
 
 #define MCP23017_ADDRESS 0x20
 
-// registers
 #define MCP23017_IODIRA 0x00
 #define MCP23017_IPOLA 0x02
 #define MCP23017_GPINTENA 0x04
@@ -57,5 +46,19 @@ uint16_t mcp23017_readGPIOAB();
 #define MCP23017_INTCAPB 0x11
 #define MCP23017_GPIOB 0x13
 #define MCP23017_OLATB 0x15
+
+void mcp23017_init(void);
+
+void mcp23017_pin_configure(uint8_t p, uint8_t d);
+
+void mcp23017_write_pin(uint8_t p, uint8_t d);
+
+void mcp23017_pull_up(uint8_t p, uint8_t d);
+
+uint8_t mcp23017_read_pin(uint8_t p);
+
+void mcp23017_write_gpio_ab(uint16_t);
+
+uint16_t mcp23017_read_gpio_ab();
 
 #endif /* GW_DISPLAY_MCP23017_H__ */
