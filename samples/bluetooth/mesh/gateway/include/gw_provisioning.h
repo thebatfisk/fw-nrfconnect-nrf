@@ -15,11 +15,15 @@ extern "C" {
 
 int bt_ready(void);
 
-int provision_device(uint8_t prov_beac_timeout);
+int provision_device(uint8_t dev_num);
 
 int configure_device(void);
 
-void testing(void);
+void blink_device(uint8_t dev_num);
+
+uint8_t get_unprov_dev_num(void);
+
+bool ready_to_blink(void);
 
 #ifdef __cplusplus
 }

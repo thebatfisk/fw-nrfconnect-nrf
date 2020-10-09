@@ -8,15 +8,32 @@
 #include <bluetooth/mesh.h>
 #include <settings/settings.h>
 
+#include "gw_provisioning.h"
+
 #define GROUP_ADDR 0xc000
+#define MAX_UNPROV_DEVICES 30
+
+struct unprov_device {
+	uint8_t uuid[16];
+	uint16_t addr;
+	bool configured;
+	uint16_t time;
+};
+
+struct unprov_devices {
+	uint8_t number;
+	struct unprov_device dev[MAX_UNPROV_DEVICES];
+};
+
+static struct unprov_devices unprov_devs;
 
 static const uint16_t net_idx;
 static const uint16_t app_idx;
-static uint16_t self_addr = 1, node_addr;
+static uint16_t self_addr = 1, added_node_addr;
 static const uint8_t dev_uuid[16] = { 0xdd, 0xdd };
-static uint8_t node_uuid[16];
+// static uint8_t node_uuid[16];
 
-K_SEM_DEFINE(sem_unprov_beacon, 0, 1);
+// K_SEM_DEFINE(sem_unprov_beacon, 0, 1);
 K_SEM_DEFINE(sem_node_added, 0, 1);
 
 static struct bt_mesh_cfg_srv cfg_srv = {
@@ -188,14 +205,36 @@ static void unprovisioned_beacon(uint8_t uuid[16],
 				 bt_mesh_prov_oob_info_t oob_info,
 				 uint32_t *uri_hash)
 {
-	memcpy(node_uuid, uuid, 16); // TODO: Do not copy if a provisioning is in progress?
-	k_sem_give(&sem_unprov_beacon);
+	bool dev_in_list = false;
+
+	if (unprov_devs.number == 0) {
+		memcpy(unprov_devs.dev[0].uuid, uuid, 16);
+		unprov_devs.dev[0].time = 0;
+		unprov_devs.number++;
+	} else if (unprov_devs.number < MAX_UNPROV_DEVICES) {
+		for (int i = 0; i < unprov_devs.number; i++) {
+			if (!memcmp(unprov_devs.dev[i].uuid, uuid, 16)) {
+				dev_in_list = true;
+			}
+		}
+
+		if (!dev_in_list) {
+			memcpy(unprov_devs.dev[unprov_devs.number].uuid, uuid, 16);
+			unprov_devs.dev[unprov_devs.number].time = 0;
+			unprov_devs.number++;
+			printk("%d unprovisioned device(s)\n", unprov_devs.number);
+		}
+	}
+
+	// char uuid_hex_str[32 + 1];
+	// bin2hex(uuid, 16, uuid_hex_str, sizeof(uuid_hex_str));
+	// printk("Unprov beacon: %s - %X\n", uuid_hex_str, oob_info);
 }
 
 static void node_added(uint16_t net_idx, uint8_t uuid[16], uint16_t addr,
 		       uint8_t num_elem)
 {
-	node_addr = addr;
+	added_node_addr = addr;
 	k_sem_give(&sem_node_added);
 }
 
@@ -267,45 +306,54 @@ int bt_ready(void)
 	return 0;
 }
 
-int provision_device(uint8_t prov_beac_timeout)
+int provision_device(uint8_t dev_num)
 {
 	char uuid_hex_str[32 + 1];
 	int err;
 
-	k_sem_reset(&sem_unprov_beacon);
+	// k_sem_reset(&sem_unprov_beacon);
 	k_sem_reset(&sem_node_added);
 
-	printk("Waiting for unprovisioned beacon...\n");
-	err = k_sem_take(&sem_unprov_beacon, K_SECONDS(prov_beac_timeout));
-	if (err == -EAGAIN) {
-		printk("Timeout waiting for unprovisioned beacon\n");
-		goto end;
-	}
+	// printk("Waiting for unprovisioned beacon...\n");
+	// err = k_sem_take(&sem_unprov_beacon, K_SECONDS(prov_beac_timeout));
+	// if (err == -EAGAIN) {
+	// 	printk("Timeout waiting for unprovisioned beacon\n");
+	// 	goto end;
+	// }
 
-	bin2hex(node_uuid, 16, uuid_hex_str, sizeof(uuid_hex_str));
+	bin2hex(unprov_devs.dev[dev_num].uuid, 16, uuid_hex_str, sizeof(uuid_hex_str));
 
 	printk("Provisioning %s\n", uuid_hex_str);
-	err = bt_mesh_provision_adv(node_uuid, net_idx, 0, 0);
+
+	// while (bt_mesh_prov_link_active()) {
+	// }
+	k_sleep(K_MSEC(4500)); // TODO: Improve this
+
+	err = bt_mesh_provision_adv(unprov_devs.dev[dev_num].uuid, net_idx, 0, 0, false);
 	if (err < 0) {
 		printk("Provisioning failed (err %d)\n", err);
-		goto end;
+		return err;
 	}
 
 	printk("Waiting for node to be added...\n");
 	err = k_sem_take(&sem_node_added, K_SECONDS(10));
 	if (err == -EAGAIN) {
 		printk("Timeout waiting for node to be added\n");
-		goto end;
+		return err;
 	}
 
-	printk("Added node 0x%04x\n", node_addr);
+	printk("Added node 0x%04x\n", added_node_addr);
 
-	end:
-		bt_mesh_cdb_node_foreach(check_unconfigured, NULL);
-		return err;
+	bt_mesh_cdb_node_foreach(check_unconfigured, NULL);
+
+	k_sleep(K_MSEC(4500)); // TODO: Remove?
+
+	err = configure_device();
+
+	return err;
 }
 
-// struct bt_mesh_cdb_node *node = bt_mesh_cdb_node_get(node_addr);
+// struct bt_mesh_cdb_node *node = bt_mesh_cdb_node_get(added_node_addr);
 
 int configure_device(void)
 {
@@ -314,7 +362,7 @@ int configure_device(void)
 	int err, i;
 
 	/* Only page 0 is currently implemented */
-	err = bt_mesh_cfg_comp_data_get(net_idx, node_addr, 0x00,
+	err = bt_mesh_cfg_comp_data_get(net_idx, added_node_addr, 0x00,
 					&status, &comp);
 	if (err) {
 		printk("Getting composition failed (err %d)\n", err);
@@ -326,7 +374,7 @@ int configure_device(void)
 		return status;
 	}
 
-	printk("Composition Data for 0x%04x:\n", node_addr);
+	printk("Composition Data for 0x%04x:\n", added_node_addr);
 	printk("\tCID      0x%04x\n",
 		    net_buf_simple_pull_le16(&comp));
 	printk("\tPID      0x%04x\n",
@@ -389,13 +437,13 @@ int configure_device(void)
 	// TODO: This can be improved
 	if (srv_count && !cli_count) {
 		for (i = 0; i < srv_count; i++) {
-			err = bt_mesh_cfg_mod_app_bind(net_idx, node_addr, (node_addr + i), app_idx, BT_MESH_MODEL_ID_GEN_ONOFF_SRV, NULL);
+			err = bt_mesh_cfg_mod_app_bind(net_idx, added_node_addr, (added_node_addr + i), app_idx, BT_MESH_MODEL_ID_GEN_ONOFF_SRV, NULL);
 			if (err) {
 				printk("Error binding app key to server (%d)\n", err);
 				return err;
 			}
 
-			err = bt_mesh_cfg_mod_sub_add(net_idx, node_addr, (node_addr + i), GROUP_ADDR, BT_MESH_MODEL_ID_GEN_ONOFF_SRV, NULL);
+			err = bt_mesh_cfg_mod_sub_add(net_idx, added_node_addr, (added_node_addr + i), GROUP_ADDR, BT_MESH_MODEL_ID_GEN_ONOFF_SRV, NULL);
 			if (err) {
 				printk("Error setting server subscription address (%d)\n", err);
 				return err;
@@ -414,14 +462,13 @@ int configure_device(void)
 		pub_params.transmit = 0;
 
 		for (i = 0; i < cli_count; i++) {
-			printk("node_addr: %d\n", node_addr);
-			err = bt_mesh_cfg_mod_app_bind(net_idx, node_addr, (node_addr + i), app_idx, BT_MESH_MODEL_ID_GEN_ONOFF_CLI, NULL);
+			err = bt_mesh_cfg_mod_app_bind(net_idx, added_node_addr, (added_node_addr + i), app_idx, BT_MESH_MODEL_ID_GEN_ONOFF_CLI, NULL);
 			if (err) {
 				printk("Error binding app key to client (%d)\n", err);
 				return err;
 			}
 
-			err = bt_mesh_cfg_mod_pub_set(net_idx, node_addr, (node_addr + i), BT_MESH_MODEL_ID_GEN_ONOFF_CLI, &pub_params, NULL);
+			err = bt_mesh_cfg_mod_pub_set(net_idx, added_node_addr, (added_node_addr + i), BT_MESH_MODEL_ID_GEN_ONOFF_CLI, &pub_params, NULL);
 			if (err) {
 				printk("Error setting client publishing parameters (%d)\n", err);
 				return err;
@@ -434,13 +481,24 @@ int configure_device(void)
 	return 0;
 }
 
-void testing(void)
+void blink_device(uint8_t dev_num) 
 {
-	struct bt_mesh_cfg_mod_pub test_get_pub;
+	int err;
 
-	printk("Publishing parameters:\n");
-	for (int i = 0; i < 4; i++) {
-		bt_mesh_cfg_mod_pub_get(net_idx, node_addr, (node_addr + i), BT_MESH_MODEL_ID_GEN_ONOFF_CLI, &test_get_pub, NULL);
-		printk("i: %d - addr: %d - app_idx: %d - cred_flag: %d - ttl: %d - period: %d - transmit: %d\n", i, test_get_pub.addr, test_get_pub.app_idx, test_get_pub.cred_flag, test_get_pub.ttl, test_get_pub.period, test_get_pub.transmit);
+	err = bt_mesh_provision_adv(unprov_devs.dev[dev_num].uuid, net_idx, 0, 100, true);
+	if (err == -16) {
+		printk("Provision link still active...\n");
+	} else if (err < 0) {
+		printk("provision_adv failed (%d)\n", err);
 	}
+}
+
+uint8_t get_unprov_dev_num(void) 
+{
+	return unprov_devs.number;
+}
+
+bool ready_to_blink(void) // TODO: Change name
+{
+	return !bt_mesh_prov_link_active();
 }

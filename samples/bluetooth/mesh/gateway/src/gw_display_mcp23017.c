@@ -139,13 +139,13 @@ void mcp23017_pull_up(uint8_t p, uint8_t d)
 	i2c_write(i2c_dev, buf, 2, MCP23017_ADDRESS);
 }
 
-void mcp23017_read_pin(uint8_t p, uint8_t *ret)
+int mcp23017_read_pin(uint8_t p, uint8_t *ret)
 {
 	uint8_t gpioaddr;
 	uint8_t rd_buf = 0;
 
 	if (p > 15)
-		return 0;
+		return -1;
 
 	if (p < 8)
 		gpioaddr = MCP23017_GPIOA;
@@ -157,4 +157,6 @@ void mcp23017_read_pin(uint8_t p, uint8_t *ret)
 	i2c_write_read(i2c_dev, MCP23017_ADDRESS, &gpioaddr, 1, &rd_buf, 1);
 
 	*ret = (rd_buf >> p) & 0x1;
+
+	return 0;
 }
