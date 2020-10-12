@@ -153,6 +153,11 @@ void display_write_char(char character);
 * @param str The string
 */
 void display_write_string(char *str);
+/*!
+* @brief Write a number to the display
+* @param num The number
+*/
+void display_write_number(uint16_t num);
 
 /*!
 * @brief Mid-level command that sends data to the display

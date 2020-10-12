@@ -13,17 +13,40 @@
 extern "C" {
 #endif
 
+#define BASE_GROUP_ADDR 0xc000
+#define MAX_UNPROV_DEVICES 30
+#define UNPROV_BEAC_TIMEOUT 30
+
+struct unprov_device {
+	uint8_t uuid[16];
+	uint16_t addr;
+	bool configured; // TODO: Remove?
+	uint16_t time;
+};
+
+struct unprov_devices {
+	uint8_t number;
+	struct unprov_device dev[MAX_UNPROV_DEVICES];
+};
+
+struct model_info {
+    uint8_t srv_count;
+    uint8_t cli_count;
+};
+
 int bt_ready(void);
 
 int provision_device(uint8_t dev_num);
 
-int configure_device(void);
+int get_model_info(struct model_info *mod_inf);
+
+// int configure_device(void);
 
 void blink_device(uint8_t dev_num);
 
 uint8_t get_unprov_dev_num(void);
 
-bool ready_to_blink(void);
+bool prov_link_active(void);
 
 #ifdef __cplusplus
 }

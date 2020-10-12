@@ -24,6 +24,7 @@
  */
 
 #include <zephyr.h>
+#include <stdio.h>
 #include "gw_display_shield.h"
 
 static uint8_t _data_pins[4] = { 12, 11, 10, 9 };
@@ -37,8 +38,50 @@ static uint8_t _displaymode;
 
 static uint8_t _numlines = 2;
 
-static void send(uint8_t value, uint8_t mode);
-static void write4bits(uint8_t value);
+static void write4bits(uint8_t value)
+{
+	uint16_t out = 0;
+
+	out = mcp23017_read_gpio_ab();
+
+	/* Speed up for i2c since its sluggish */
+	for (int i = 0; i < 4; i++) {
+		out &= ~(1 << _data_pins[i]);
+		out |= ((value >> i) & 0x1) << _data_pins[i];
+	}
+
+	/* Make sure enable is low */
+	out &= ~(1 << _enable_pin);
+
+	mcp23017_write_gpio_ab(out);
+
+	/* Pulse enable */
+	k_sleep(K_USEC(1));
+	out |= (1 << _enable_pin);
+	mcp23017_write_gpio_ab(out);
+	k_sleep(K_USEC(1));
+	out &= ~(1 << _enable_pin);
+	mcp23017_write_gpio_ab(out);
+	k_sleep(K_USEC(100));
+}
+
+static void send(uint8_t value, uint8_t mode)
+{
+	// mcp23017_write_pin(_rs_pin, mode); // *** THE PROBLEM IS THAT THIS NEVER GOES HIGH ***
+
+	/* Hack */
+	if (mode == LOW) {
+		mcp23017_pin_configure(_rs_pin, OUTPUT);
+	} else {
+		mcp23017_pin_configure(_rs_pin, INPUT);
+	}
+	/* **** */
+
+	mcp23017_write_pin(_rw_pin, LOW);
+
+	write4bits(value >> 4);
+	write4bits(value);
+}
 
 void display_shield_init(void)
 {
@@ -235,6 +278,29 @@ void display_write_string(char *str)
 	}
 }
 
+/* Uses potentially 3 character slots */
+void display_write_number(uint16_t num)
+{
+	if (num > 999) {
+		printk("Number larger than 3 digits\n");
+		return;
+	}
+
+	char string[3];
+
+	sprintf(string, "%d", num);
+
+	display_write_char(string[0]);
+
+	if (num > 9) {
+		display_write_char(string[1]);
+	}
+
+	if (num > 99) {
+		display_write_char(string[2]);
+	}
+}
+
 void command(uint8_t value)
 {
 	send(value, LOW);
@@ -253,51 +319,6 @@ void display_set_backlight(uint8_t status)
 		     2) & 0x1); // ******** THIS DOES NOT WORK PROPERLY ********
 	mcp23017_write_pin(7, ~(status >> 1) & 0x1);
 	mcp23017_write_pin(6, ~status & 0x1);
-}
-
-static void send(uint8_t value, uint8_t mode)
-{
-	// mcp23017_write_pin(_rs_pin, mode); // *** THE PROBLEM IS THAT THIS NEVER GOES HIGH ***
-
-	/* Hack */
-	if (mode == LOW) {
-		mcp23017_pin_configure(_rs_pin, OUTPUT);
-	} else {
-		mcp23017_pin_configure(_rs_pin, INPUT);
-	}
-	/* **** */
-
-	mcp23017_write_pin(_rw_pin, LOW);
-
-	write4bits(value >> 4);
-	write4bits(value);
-}
-
-static void write4bits(uint8_t value)
-{
-	uint16_t out = 0;
-
-	out = mcp23017_read_gpio_ab();
-
-	/* Speed up for i2c since its sluggish */
-	for (int i = 0; i < 4; i++) {
-		out &= ~(1 << _data_pins[i]);
-		out |= ((value >> i) & 0x1) << _data_pins[i];
-	}
-
-	/* Make sure enable is low */
-	out &= ~(1 << _enable_pin);
-
-	mcp23017_write_gpio_ab(out);
-
-	/* Pulse enable */
-	k_sleep(K_USEC(1));
-	out |= (1 << _enable_pin);
-	mcp23017_write_gpio_ab(out);
-	k_sleep(K_USEC(1));
-	out &= ~(1 << _enable_pin);
-	mcp23017_write_gpio_ab(out);
-	k_sleep(K_USEC(100));
 }
 
 uint8_t display_read_buttons(void)
