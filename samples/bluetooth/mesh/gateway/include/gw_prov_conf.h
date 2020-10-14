@@ -20,7 +20,6 @@ extern "C" {
 struct unprov_device {
 	uint8_t uuid[16];
 	uint16_t addr;
-	bool configured; // TODO: Remove?
 	uint16_t time;
 };
 
@@ -34,13 +33,20 @@ struct model_info {
     uint8_t cli_count;
 };
 
+struct room_info {
+	const char *name;
+	uint16_t group_addr;
+};
+
 int bt_ready(void);
 
 int provision_device(uint8_t dev_num);
 
 int get_model_info(struct model_info *mod_inf);
 
-// int configure_device(void);
+int configure_server(uint8_t elem_num, uint16_t group_addr);
+
+int configure_client(uint8_t elem_num, uint16_t group_addr);
 
 void blink_device(uint8_t dev_num);
 

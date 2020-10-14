@@ -10,11 +10,11 @@
 #include <settings/settings.h>
 // #include <bluetooth/mesh/models.h>
 // #include <bluetooth/mesh/dk_prov.h>
-#include <dk_buttons_and_leds.h> // TODO: Remove?
-#include "gw_provisioning.h"
+#include "gw_prov_conf.h"
 #include "gw_display_shield.h"
 
 K_SEM_DEFINE(sem_gw_system_state, 0, 1);
+K_SEM_DEFINE(sem_choose_room, 0, 1);
 
 enum gw_system_states
 {
@@ -24,11 +24,7 @@ enum gw_system_states
 	s_prov_conf_dev,
 };
 
-struct room_info {
-	const char *name;
-	uint16_t group_addr;
-};
-
+// TODO: Unique node names
 const struct room_info rooms[] = {
 	[0] = { .name = "Living room    ", .group_addr = BASE_GROUP_ADDR },
 	[1] = { .name = "Kitchen        ", .group_addr = BASE_GROUP_ADDR + 1 },
@@ -43,7 +39,7 @@ static bool take_sem = true;
 static uint8_t curr_but_pressed;
 static bool update_unprov_devs;
 static uint8_t chosen_dev;
-static uint64_t room_iterator;
+static uint8_t room_iterator;
 static bool room_chosen;
 
 static struct k_delayed_work button_work;
@@ -63,19 +59,35 @@ static void button_work_handler(struct k_work *work)
 	} else if (button_state & BUTTON_LEFT && (curr_but_pressed != BUTTON_LEFT)) {
 		printk("BUTTON LEFT\n");
 		curr_but_pressed = BUTTON_LEFT;
-		if (!prov_link_active()) {
-			if (chosen_dev > 0) {
-				chosen_dev--;
-				k_sem_give(&sem_gw_system_state);
+
+		if (gw_system_state == s_blink_dev) {
+			if (!prov_link_active()) {
+				if (chosen_dev > 0) {
+					chosen_dev--;
+					k_sem_give(&sem_gw_system_state);
+				}
+			}
+		} else if (gw_system_state == s_prov_conf_dev) {
+			if (room_iterator > 0) {
+				room_iterator--;
+				k_sem_give(&sem_choose_room);
 			}
 		}
 	} else if (button_state & BUTTON_RIGHT && (curr_but_pressed != BUTTON_RIGHT)) {
 		printk("BUTTON RIGHT\n");
 		curr_but_pressed = BUTTON_RIGHT;
-		if (!prov_link_active()) {
-			if (chosen_dev < (get_unprov_dev_num() - 1)) {
-				chosen_dev++;
-				k_sem_give(&sem_gw_system_state);
+
+		if (gw_system_state == s_blink_dev) {
+			if (!prov_link_active()) {
+				if (chosen_dev < (get_unprov_dev_num() - 1)) {
+					chosen_dev++;
+					k_sem_give(&sem_gw_system_state);
+				}
+			}
+		} else if (gw_system_state == s_prov_conf_dev) {
+			if (room_iterator < (sizeof(rooms) / sizeof(rooms[0]) - 1)) {
+				room_iterator++;
+				k_sem_give(&sem_choose_room);
 			}
 		}
 	} else if (button_state & BUTTON_SELECT && (curr_but_pressed != BUTTON_SELECT)) {
@@ -86,13 +98,18 @@ static void button_work_handler(struct k_work *work)
 			gw_system_state = s_idle;
 			k_sem_give(&sem_gw_system_state);
 		} else if (gw_system_state == s_idle) {
-			gw_system_state = s_blink_dev; // TODO: Check if there are unprov devs
-			k_sem_give(&sem_gw_system_state);
+			if (get_unprov_dev_num() > 0) {
+				gw_system_state = s_blink_dev;
+				k_sem_give(&sem_gw_system_state);
+			}
 		} else if (gw_system_state == s_blink_dev) {
 			if (!prov_link_active()) {
 				gw_system_state = s_prov_conf_dev;
 				k_sem_give(&sem_gw_system_state);
 			}
+		} else if (gw_system_state == s_prov_conf_dev) {
+			room_chosen = true;
+			k_sem_give(&sem_choose_room);
 		}
 	} else if (!button_state) {
 		curr_but_pressed = 0;
@@ -178,6 +195,7 @@ void main(void)
 
 			update_unprov_devs = true;
 			k_delayed_work_submit(&unprov_devs_work, K_NO_WAIT);
+
 		} else if (gw_system_state == s_prov_conf_dev) {
 			k_delayed_work_cancel(&unprov_devs_work);
 			update_unprov_devs = false;
@@ -188,23 +206,41 @@ void main(void)
 
 			provision_device(chosen_dev);
 
-			// struct model_info mod_inf;
-			// get_model_info(&mod_inf);
+			struct model_info mod_inf = { .srv_count = 0, .cli_count = 0 };
+			get_model_info(&mod_inf);
+			room_iterator = 0;
 
-			// if (mod_inf.srv_count > 0) {
-			// 	for (int i = 0; i < mod_inf.srv_count; i++) {
-			// 		display_clear();
-			// 		display_set_cursor(0, 0);
-			// 		display_write_string("Light ");
-			// 		display_write_number(i);
+			for (int i = 0; i < mod_inf.srv_count; i++) {
+				room_chosen = false;
+				display_clear();
+				display_set_cursor(0, 0);
+				display_write_string("Light ");
+				display_write_number(i);
+				while (!room_chosen)
+				{
+					display_set_cursor(0, 1);
+					display_write_string(rooms[room_iterator].name);
+					k_sem_take(&sem_choose_room, K_FOREVER);
+				}
 
-			// 		display_set_cursor(0, 1);
-			// 		// display_write_string(rooms[room_iterator].name);
-			// 	}
-			// }
+				configure_server(i, rooms[room_iterator].group_addr);
+			}
+			
+			for (int i = 0; i < mod_inf.cli_count; i++) {
+				room_chosen = false;
+				display_clear();
+				display_set_cursor(0, 0);
+				display_write_string("Light Switch ");
+				display_write_number(i);
+				while (!room_chosen)
+				{
+					display_set_cursor(0, 1);
+					display_write_string(rooms[room_iterator].name);
+					k_sem_take(&sem_choose_room, K_FOREVER);
+				}
 
-			// display_set_cursor(0, 1);
-			// display_write_string("Configuring...");
+				configure_client(i, rooms[room_iterator].group_addr);
+			}
 
 			gw_system_state = s_idle;
 			take_sem = false;

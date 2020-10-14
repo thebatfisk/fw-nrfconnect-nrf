@@ -269,7 +269,7 @@ void display_write_char(char character)
 }
 
 /* Write a string to the display */
-void display_write_string(char *str)
+void display_write_string(const char *str)
 {
 	unsigned char i = 0;
 

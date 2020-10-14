@@ -152,7 +152,7 @@ void display_write_char(char character);
 * @brief Write a string to the display
 * @param str The string
 */
-void display_write_string(char *str);
+void display_write_string(const char *str);
 /*!
 * @brief Write a number to the display
 * @param num The number

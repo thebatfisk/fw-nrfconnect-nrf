@@ -4,12 +4,10 @@
  * SPDX-License-Identifier: LicenseRef-BSD-5-Clause-Nordic
  */
 
-// TODO: Change file name to prov_conf?
-
 #include <bluetooth/bluetooth.h>
 #include <bluetooth/mesh.h>
 #include <settings/settings.h>
-#include "gw_provisioning.h"
+#include "gw_prov_conf.h"
 
 static struct unprov_devices unprov_devs;
 
@@ -193,9 +191,9 @@ static void unprovisioned_beacon(uint8_t uuid[16],
 
 	if (unprov_devs.number == 0) {
 		memcpy(unprov_devs.dev[0].uuid, uuid, 16);
-		unprov_devs.dev[0].time = 0; // TODO: Remove?
+		unprov_devs.dev[0].time = 0;
 		unprov_devs.number++;
-		printk("%d unprovisioned device\n", unprov_devs.number);
+		printk("%d unprovisioned node\n", unprov_devs.number);
 	} else if (unprov_devs.number < MAX_UNPROV_DEVICES) {
 		for (int i = 0; i < unprov_devs.number; i++) {
 			if (!memcmp(unprov_devs.dev[i].uuid, uuid, 16)) {
@@ -206,9 +204,9 @@ static void unprovisioned_beacon(uint8_t uuid[16],
 
 		if (!dev_in_list) {
 			memcpy(unprov_devs.dev[unprov_devs.number].uuid, uuid, 16);
-			unprov_devs.dev[unprov_devs.number].time = 0; // TODO: Remove?
+			unprov_devs.dev[unprov_devs.number].time = 0;
 			unprov_devs.number++;
-			printk("%d unprovisioned devices\n", unprov_devs.number);
+			printk("%d unprovisioned nodes\n", unprov_devs.number);
 		}
 	}
 
@@ -221,6 +219,19 @@ static void node_added(uint16_t net_idx, uint8_t uuid[16], uint16_t addr,
 		       uint8_t num_elem)
 {
 	added_node_addr = addr;
+
+	for (int i = 0; i < unprov_devs.number; i++) {
+		if (!memcmp(unprov_devs.dev[i].uuid, uuid, 16)) {
+			for (int j = i; j < unprov_devs.number; j++) {
+				unprov_devs.dev[j] = unprov_devs.dev[j + 1];
+			}
+
+			unprov_devs.number--;
+
+			break;
+		}
+	}
+
 	k_sem_give(&sem_node_added);
 }
 
@@ -252,7 +263,7 @@ static void prov_beac_timeout_work_handler(struct k_work *work)
 
 		if(unprov_devs.dev[i].time > UNPROV_BEAC_TIMEOUT) {
 			for (int j = i; j < unprov_devs.number; j++) {
-				unprov_devs.dev[j] = unprov_devs.dev[j+1];
+				unprov_devs.dev[j] = unprov_devs.dev[j + 1];
 			}
 
 			unprov_devs.number--;
@@ -346,7 +357,7 @@ int provision_device(uint8_t dev_num)
 
 	bt_mesh_cdb_node_foreach(check_unconfigured, NULL);
 
-	k_sleep(K_MSEC(3000)); // TODO: Improve this
+	k_sleep(K_MSEC(3000)); // TODO: Improve this?
 
 	return err;
 }
@@ -356,7 +367,7 @@ int provision_device(uint8_t dev_num)
 int get_model_info(struct model_info *mod_inf)
 {
 	NET_BUF_SIMPLE_DEFINE(comp, 64);
-	uint8_t status, srv_count = 0, cli_count = 0;
+	uint8_t status;
 	int err, i;
 
 	/* Only page 0 is currently implemented */
@@ -435,54 +446,56 @@ int get_model_info(struct model_info *mod_inf)
 	return 0;
 }
 
-// int configure_device(void)
-// {
-// 	// TODO: This can be improved
-// 	if (srv_count && !cli_count) {
-// 		for (i = 0; i < srv_count; i++) {
-// 			err = bt_mesh_cfg_mod_app_bind(net_idx, added_node_addr, (added_node_addr + i), app_idx, BT_MESH_MODEL_ID_GEN_ONOFF_SRV, NULL);
-// 			if (err) {
-// 				printk("Error binding app key to server (%d)\n", err);
-// 				return err;
-// 			}
+int configure_server(uint8_t elem_num, uint16_t group_addr)
+{
+	int err;
 
-// 			err = bt_mesh_cfg_mod_sub_add(net_idx, added_node_addr, (added_node_addr + i), GROUP_ADDR, BT_MESH_MODEL_ID_GEN_ONOFF_SRV, NULL);
-// 			if (err) {
-// 				printk("Error setting server subscription address (%d)\n", err);
-// 				return err;
-// 			}
-// 		}
+	err = bt_mesh_cfg_mod_app_bind(net_idx, added_node_addr, (added_node_addr + elem_num), app_idx, BT_MESH_MODEL_ID_GEN_ONOFF_SRV, NULL);
+	if (err) {
+		printk("Error binding app key to server (%d)\n", err);
+		return err;
+	}
 
-// 		printk("Server models configured\n");
-// 	} else if (cli_count && !srv_count) {
-// 		struct bt_mesh_cfg_mod_pub pub_params;
+	err = bt_mesh_cfg_mod_sub_add(net_idx, added_node_addr, (added_node_addr + elem_num), group_addr, BT_MESH_MODEL_ID_GEN_ONOFF_SRV, NULL);
+	if (err) {
+		printk("Error setting server subscription address (%d)\n", err);
+		return err;
+	}
 
-// 		pub_params.addr = GROUP_ADDR;
-// 		pub_params.app_idx = app_idx;
-// 		pub_params.cred_flag = false;
-// 		pub_params.ttl = 7;
-// 		pub_params.period = 0;
-// 		pub_params.transmit = 0;
+	printk("Server model %d configured\n", elem_num);
 
-// 		for (i = 0; i < cli_count; i++) {
-// 			err = bt_mesh_cfg_mod_app_bind(net_idx, added_node_addr, (added_node_addr + i), app_idx, BT_MESH_MODEL_ID_GEN_ONOFF_CLI, NULL);
-// 			if (err) {
-// 				printk("Error binding app key to client (%d)\n", err);
-// 				return err;
-// 			}
+	return 0;
+}
 
-// 			err = bt_mesh_cfg_mod_pub_set(net_idx, added_node_addr, (added_node_addr + i), BT_MESH_MODEL_ID_GEN_ONOFF_CLI, &pub_params, NULL);
-// 			if (err) {
-// 				printk("Error setting client publishing parameters (%d)\n", err);
-// 				return err;
-// 			}
-// 		}
+int configure_client(uint8_t elem_num, uint16_t group_addr)
+{
+	int err;
 
-// 		printk("Client models configured\n");
-// 	}
+	struct bt_mesh_cfg_mod_pub pub_params = {
+		.addr = group_addr,
+		.app_idx = app_idx,
+		.cred_flag = false,
+		.ttl = 7,
+		.period = 0,
+		.transmit = 0,
+	};
 
-// 	return 0;
-// }
+	err = bt_mesh_cfg_mod_app_bind(net_idx, added_node_addr, (added_node_addr + elem_num), app_idx, BT_MESH_MODEL_ID_GEN_ONOFF_CLI, NULL);
+	if (err) {
+		printk("Error binding app key to client (%d)\n", err);
+		return err;
+	}
+
+	err = bt_mesh_cfg_mod_pub_set(net_idx, added_node_addr, (added_node_addr + elem_num), BT_MESH_MODEL_ID_GEN_ONOFF_CLI, &pub_params, NULL);
+	if (err) {
+		printk("Error setting client publishing parameters (%d)\n", err);
+		return err;
+	}
+
+	printk("Client model %d configured\n", elem_num);
+
+	return 0;
+}
 
 void blink_device(uint8_t dev_num) 
 {
