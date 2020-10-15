@@ -13,7 +13,18 @@
 extern "C" {
 #endif
 
+struct gw_nfc_rx_data {
+    const uint8_t *value;
+    uint16_t length;
+};
+
+struct gw_nfc_cb {
+	void (*rx)(struct gw_nfc_rx_data);
+};
+
 int gw_nfc_init(void);
+
+void gw_nfc_register_cb(struct gw_nfc_cb *cb);
 
 #ifdef __cplusplus
 }
