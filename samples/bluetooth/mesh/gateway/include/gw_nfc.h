@@ -26,6 +26,10 @@ int gw_nfc_init(void);
 
 void gw_nfc_register_cb(struct gw_nfc_cb *cb);
 
+int gw_nfc_start(void);
+
+int gw_nfc_stop(void);
+
 #ifdef __cplusplus
 }
 #endif

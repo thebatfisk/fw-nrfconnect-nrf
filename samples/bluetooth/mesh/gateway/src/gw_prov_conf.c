@@ -325,37 +325,7 @@ int bt_ready(void)
 	return 0;
 }
 
-int provision_devce_uuid(const uint8_t *uuid)
-{
-	char uuid_hex_str[32 + 1];
-	int err;
-
-	k_sem_reset(&sem_node_added);
-
-	memcpy(node_uuid, uuid, 16);
-
-	bin2hex(node_uuid, 16, uuid_hex_str, sizeof(uuid_hex_str));
-
-	printk("Provisioning %s\n", uuid_hex_str);
-	err = bt_mesh_provision_adv(node_uuid, net_idx, 0, 0);
-	if (err < 0) {
-		printk("Provisioning failed (err %d)\n", err);
-		return err;
-	}
-
-	printk("Waiting for node to be added...\n");
-	err = k_sem_take(&sem_node_added, K_SECONDS(10));
-	if (err == -EAGAIN) {
-		printk("Timeout waiting for node to be added\n");
-		return err;
-	}
-
-	printk("Added node 0x%04x\n", node_addr);
-
-	return 0;
-}
-
-int provision_device(uint8_t prov_beac_timeout)
+int provision_device(uint8_t dev_num, const uint8_t *uuid)
 {
 	char uuid_hex_str[32 + 1];
 	int err;
@@ -366,14 +336,25 @@ int provision_device(uint8_t prov_beac_timeout)
 
 	k_sem_reset(&sem_node_added);
 
-	bin2hex(unprov_devs.dev[dev_num].uuid, 16, uuid_hex_str, sizeof(uuid_hex_str));
+	if (uuid == NULL) {
+		bin2hex(unprov_devs.dev[dev_num].uuid, 16, uuid_hex_str, sizeof(uuid_hex_str));
 
-	printk("Provisioning %s\n", uuid_hex_str);
+		printk("Provisioning %s\n", uuid_hex_str);
 
-	err = bt_mesh_provision_adv(unprov_devs.dev[dev_num].uuid, net_idx, 0, 0, false);
-	if (err < 0) {
-		printk("Provisioning failed (err %d)\n", err);
-		return err;
+		err = bt_mesh_provision_adv(unprov_devs.dev[dev_num].uuid, net_idx, 0, 0, false);
+		if (err < 0) {
+			printk("Provisioning failed (err %d)\n", err);
+			return err;
+		}
+	} else {
+		bin2hex(uuid, 16, uuid_hex_str, sizeof(uuid_hex_str));
+
+		printk("Provisioning %s\n", uuid_hex_str);
+		err = bt_mesh_provision_adv(uuid, net_idx, 0, 0, false);
+		if (err < 0) {
+			printk("Provisioning failed (err %d)\n", err);
+			return err;
+		}
 	}
 
 	printk("Waiting for node to be added...\n");

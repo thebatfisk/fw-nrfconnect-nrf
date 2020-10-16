@@ -23,6 +23,8 @@ enum gw_system_states
 	s_idle,
 	s_blink_dev,
 	s_prov_conf_dev,
+	s_nfc_start,
+	s_nfc_stop,
 };
 
 // TODO: Unique node names
@@ -38,6 +40,8 @@ static int gw_system_state = s_start;
 static bool take_sem = true;
 
 static uint8_t curr_but_pressed;
+static uint8_t nfc_uuid[16];
+static bool uuid_from_nfc;
 static bool update_unprov_devs;
 static uint8_t chosen_dev;
 static uint8_t room_iterator;
@@ -61,7 +65,10 @@ static void button_work_handler(struct k_work *work)
 		printk("BUTTON LEFT\n");
 		curr_but_pressed = BUTTON_LEFT;
 
-		if (gw_system_state == s_blink_dev) {
+		if (gw_system_state == s_start || gw_system_state == s_idle) {
+			gw_system_state = s_nfc_start;
+			k_sem_give(&sem_gw_system_state);
+		} else if (gw_system_state == s_blink_dev) {
 			if (!prov_link_active()) {
 				if (chosen_dev > 0) {
 					chosen_dev--;
@@ -78,7 +85,10 @@ static void button_work_handler(struct k_work *work)
 		printk("BUTTON RIGHT\n");
 		curr_but_pressed = BUTTON_RIGHT;
 
-		if (gw_system_state == s_blink_dev) {
+		if (gw_system_state == s_nfc_start) {
+			gw_system_state = s_nfc_stop;
+			k_sem_give(&sem_gw_system_state);
+		} else if (gw_system_state == s_blink_dev) {
 			if (!prov_link_active()) {
 				if (chosen_dev < (get_unprov_dev_num() - 1)) {
 					chosen_dev++;
@@ -137,8 +147,12 @@ static void unprov_devs_work_handler(struct k_work *work)
 
 void nfc_rx(struct gw_nfc_rx_data data)
 {
-	if (data.length == 16) {
-		provision_devce_uuid(data.value);
+	if (data.length == 16 && gw_system_state == s_nfc_start) {
+		memcpy(nfc_uuid, data.value, 16);
+		uuid_from_nfc = true;
+
+		gw_system_state = s_prov_conf_dev;
+		k_sem_give(&sem_gw_system_state);
 	}
 }
 
@@ -150,9 +164,6 @@ void main(void)
 
 	printk("Bluetooth Mesh Gateway initializing...\n");
 
-	gw_nfc_register_cb(&nfc_cb);
-	gw_nfc_init();
-
 	/* Initialize the Bluetooth Subsystem */
 	err = bt_enable(NULL);
 	if (err) {
@@ -163,6 +174,9 @@ void main(void)
 	printk("Bluetooth initialized\n");
 
 	bt_ready();
+
+	gw_nfc_register_cb(&nfc_cb);
+	gw_nfc_init();
 
 	display_shield_init();
 
@@ -217,7 +231,13 @@ void main(void)
 			display_set_cursor(0, 0);
 			display_write_string("Provisioning...");
 
-			provision_device(chosen_dev);
+			if (uuid_from_nfc) {
+				provision_device(0xff, nfc_uuid);
+				gw_nfc_stop();
+				uuid_from_nfc = false;
+			} else {
+				provision_device(chosen_dev, NULL);
+			}
 
 			struct model_info mod_inf = { .srv_count = 0, .cli_count = 0 };
 			get_model_info(&mod_inf);
@@ -254,6 +274,20 @@ void main(void)
 
 				configure_client(i, rooms[room_iterator].group_addr);
 			}
+
+			gw_system_state = s_idle;
+			take_sem = false;
+		} else if (gw_system_state == s_nfc_start) {
+			k_delayed_work_cancel(&unprov_devs_work);
+			update_unprov_devs = false;
+			
+			display_clear();
+			display_set_cursor(0, 0);
+			display_write_string("Scanning NFC...");
+			
+			gw_nfc_start();
+		} else if (gw_system_state == s_nfc_stop) {
+			gw_nfc_stop();
 
 			gw_system_state = s_idle;
 			take_sem = false;

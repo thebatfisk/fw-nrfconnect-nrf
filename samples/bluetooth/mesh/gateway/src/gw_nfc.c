@@ -263,6 +263,7 @@ static const struct gw_nfc_cb *gw_cb;
 // *** Data here ***
 static void t2t_data_read_complete(uint8_t *data)
 {
+	struct gw_nfc_rx_data gw_rx_data;
 	int err;
 
 	if (!data) {
@@ -281,15 +282,13 @@ static void t2t_data_read_complete(uint8_t *data)
 
 	nfc_t2t_printout(t2t);
 
-	for (size_t i = 0; i < t2t->tlv_count; i++) {
-		if (t2t->tlv_block_array[i].tag == NFC_T2T_TLV_NDEF_MESSAGE) {
-			// TODO: Parse this better? Include the 2 byte code?
-			struct gw_nfc_rx_data gw_rx_data = {
-				.value = (t2t->tlv_block_array[i].value + 10),
-				(t2t->tlv_block_array[i].length - 10)
-			};
-			gw_cb->rx(gw_rx_data);
-		}
+	// TODO: Support other TLV counts than 1
+	if (t2t->tlv_count == 1) {
+		// TODO: Parse this better? Include the 2 byte code?
+		gw_rx_data.value = t2t->tlv_block_array[0].value + 10;
+		gw_rx_data.length = t2t->tlv_block_array[0].length - 10;
+	} else {
+		printk("TLV count is not 1\n");
 	}
 
 	struct nfc_t2t_tlv_block *tlv_block = t2t->tlv_block_array;
@@ -301,8 +300,12 @@ static void t2t_data_read_complete(uint8_t *data)
 		}
 	}
 
-	// st25r3911b_nfca_tag_sleep();
-	st25r3911b_nfca_field_off();
+	err = st25r3911b_nfca_tag_sleep();
+	if (err) {
+		printk("Tag sleep error %d\n", err);
+	}
+
+	gw_cb->rx(gw_rx_data);
 
 	k_delayed_work_submit(&transmit_work, K_MSEC(TRANSMIT_DELAY));
 }
@@ -746,10 +749,10 @@ int gw_nfc_init(void)
 		return err;
 	}
 
-	err = st25r3911b_nfca_field_on();
+	// ***  Ensure that the field is off from the start ***
+	err = st25r3911b_nfca_field_off();
 	if (err) {
-		printk("Field on error %d\n", err);
-		return err;
+		printk("Field off error %d\n", err);
 	}
 
 	// *** Creating a thread in sted of a while(1) in main ***
@@ -764,4 +767,30 @@ int gw_nfc_init(void)
 void gw_nfc_register_cb(struct gw_nfc_cb *cb)
 {
 	gw_cb = cb;
+}
+
+int gw_nfc_start(void)
+{
+	int err;
+
+	err = st25r3911b_nfca_field_on();
+	if (err) {
+		printk("Field on error %d\n", err);
+		return err;
+	}
+
+	return 0;
+}
+
+int gw_nfc_stop(void)
+{
+	int err;
+
+	err = st25r3911b_nfca_field_off();
+	if (err) {
+		printk("Field off error %d\n", err);
+		return err;
+	}
+
+	return 0;
 }
