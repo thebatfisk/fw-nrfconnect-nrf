@@ -40,7 +40,7 @@ struct room_info {
 
 int bt_ready(void);
 
-int provision_device(uint8_t dev_num);
+int provision_device(uint8_t dev_num, const uint8_t *uuid);
 
 int get_model_info(struct model_info *mod_inf);
 

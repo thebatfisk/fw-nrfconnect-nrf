@@ -12,6 +12,9 @@
 #include <bluetooth/mesh/dk_prov.h>
 #include <dk_buttons_and_leds.h>
 #include "model_handler.h"
+#include "mesh_nfc.h"
+
+static const struct bt_mesh_prov *prov;
 
 static void bt_ready(int err)
 {
@@ -25,7 +28,9 @@ static void bt_ready(int err)
 	dk_leds_init();
 	dk_buttons_init(NULL);
 
-	err = bt_mesh_init(bt_mesh_dk_prov_init(), model_handler_init());
+	prov = bt_mesh_dk_prov_init();
+
+	err = bt_mesh_init(prov, model_handler_init());
 	if (err) {
 		printk("Initializing mesh failed (err %d)\n", err);
 		return;
@@ -37,6 +42,12 @@ static void bt_ready(int err)
 
 	/* This will be a no-op if settings_load() loaded provisioning info */
 	bt_mesh_prov_enable(BT_MESH_PROV_ADV | BT_MESH_PROV_GATT);
+
+	err = mesh_nfc_init(prov->uuid);
+	if (err) {
+		printk("Initializing NFC failed (err %d)\n", err);
+		return;
+	}
 
 	printk("Mesh initialized\n");
 }
