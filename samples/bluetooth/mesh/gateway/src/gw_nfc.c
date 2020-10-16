@@ -260,7 +260,8 @@ static void ndef_data_analyze(const uint8_t *ndef_msg_buff, size_t nfc_data_len)
 
 static const struct gw_nfc_cb *gw_cb;
 
-static void t2t_data_read_complete(uint8_t *data) // *** DATA HERE ***
+// *** Data here ***
+static void t2t_data_read_complete(uint8_t *data)
 {
 	int err;
 
@@ -282,6 +283,7 @@ static void t2t_data_read_complete(uint8_t *data) // *** DATA HERE ***
 
 	for (size_t i = 0; i < t2t->tlv_count; i++) {
 		if (t2t->tlv_block_array[i].tag == NFC_T2T_TLV_NDEF_MESSAGE) {
+			// TODO: Parse this better? Include the 2 byte code?
 			struct gw_nfc_rx_data gw_rx_data = {
 				.value = (t2t->tlv_block_array[i].value + 10),
 				(t2t->tlv_block_array[i].length - 10)
@@ -299,7 +301,8 @@ static void t2t_data_read_complete(uint8_t *data) // *** DATA HERE ***
 		}
 	}
 
-	st25r3911b_nfca_tag_sleep();
+	// st25r3911b_nfca_tag_sleep();
+	st25r3911b_nfca_field_off();
 
 	k_delayed_work_submit(&transmit_work, K_MSEC(TRANSMIT_DELAY));
 }
@@ -417,9 +420,7 @@ static void tag_detected(const struct st25r3911b_nfca_sens_resp *sens_resp)
 	}
 }
 
-static void
-anticollision_completed(const struct st25r3911b_nfca_tag_info *tag_info,
-			int err)
+static void ac_comp(const struct st25r3911b_nfca_tag_info *tag_info, int err)
 {
 	if (err) {
 		printk("Error during anticollision avoidance\n");
@@ -495,11 +496,12 @@ static void tag_sleep(void)
 	printk("Tag entered the Sleep state\n");
 }
 
+// *** Data ends up in this transfer_complete cb ***
 static const struct st25r3911b_nfca_cb cb = { .field_on = nfc_field_on,
 					      .field_off = nfc_field_off,
 					      .tag_detected = tag_detected,
 					      .anticollision_completed =
-						      anticollision_completed,
+						      ac_comp,
 					      .rx_timeout = nfc_timeout,
 					      .transfer_completed =
 						      transfer_completed,
@@ -721,11 +723,14 @@ int gw_nfc_init(void)
 {
 	int err;
 
-	printk("Starting NFC TAG Reader example\n");
+	printk("Initiating NFC TAG Reader\n");
+
+	// *** Can be commented out ***
 	nfc_t4t_hl_procedure_cb_register(&t4t_hl_procedure_cb);
 
 	k_delayed_work_init(&transmit_work, transfer_handler);
 
+	// *** Need this for st25r3911b_nfca_init() ***
 	err = nfc_t4t_isodep_init(tx_data, sizeof(tx_data), t4t.data,
 				  sizeof(t4t.data), &t4t_isodep_cb);
 	if (err) {
@@ -734,6 +739,7 @@ int gw_nfc_init(void)
 		return err;
 	}
 
+	// *** This is related to the t2t_data_read_complete() callback ***
 	err = st25r3911b_nfca_init(events, ARRAY_SIZE(events), &cb);
 	if (err) {
 		printk("NFCA initialization failed err: %d\n", err);
@@ -746,6 +752,7 @@ int gw_nfc_init(void)
 		return err;
 	}
 
+	// *** Creating a thread in sted of a while(1) in main ***
 	nfc_tid = k_thread_create(&nfc_thread_data, nfc_stack_area,
 				  K_THREAD_STACK_SIZEOF(nfc_stack_area),
 				  gw_nfc_poll, NULL, NULL, NULL, NFC_PRIORITY,

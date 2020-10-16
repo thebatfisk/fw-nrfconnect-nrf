@@ -40,15 +40,8 @@ static void button_handler(uint32_t pressed, uint32_t changed)
 
 void nfc_rx(struct gw_nfc_rx_data data)
 {
-	uint8_t test_buf[20];
-
-	// if length == 16 -> memcpy to uuid variable
-
-	printk("NFC NDEF message:\n");
-
-	for (int j = 0; j < data.length; j++) {
-		test_buf[j] = *(data.value + j);
-		printk("0x%x\n", test_buf[j]);
+	if (data.length == 16) {
+		provision_devce_uuid(data.value);
 	}
 }
 
@@ -62,9 +55,8 @@ void main(void)
 
 	dk_buttons_init(button_handler);
 
-	gw_nfc_init();
-
 	gw_nfc_register_cb(&nfc_cb);
+	gw_nfc_init();
 
 	/* Initialize the Bluetooth Subsystem */
 	err = bt_enable(NULL);

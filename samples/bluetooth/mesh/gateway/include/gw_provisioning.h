@@ -15,6 +15,8 @@ extern "C" {
 
 int bt_ready(void);
 
+int provision_devce_uuid(const uint8_t *uuid);
+
 int provision_device(uint8_t prov_beac_timeout);
 
 int configure_device(void);
