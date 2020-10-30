@@ -33,16 +33,19 @@ The following table shows the Thingy:52 client composition data for this demo:
 .. table::
    :align: center
 
-   =================  ===============
-   Element 1          Element 2
-   =================  ===============
-   Config Server      Thingy:52 Client
-   Health Server
-   =================  ===============
+   +------------------+
+   |   Element 1      |
+   +==================+
+   |  Config Server   |
+   +------------------+
+   |  Health Server   |
+   +------------------+
+   | Thingy:52 Client |
+   +------------------+
 
 The models are used for the following purposes:
 
-* :ref:`bt_mesh_thingy52_cli_readme` instance to control RGB messages.
+* :ref:`bt_mesh_thingy52_mod_readme` instance to control RGB messages.
 * Config Server allows configurator devices to configure the node remotely.
 * Health Server provides ``attention`` callbacks that are used during provisioning to call your attention to the device.
   These callbacks trigger blinking of the LEDs.
@@ -59,13 +62,13 @@ The demo requires a smartphone with Nordic Semiconductor's nRF Mesh mobile app i
   * `nRF Mesh mobile app for iOS`_
 
 An additional requirement is the :ref:`bluetooth_mesh_thingy52_srv` demo programmed on a separate Thingy:52
-device and configured according to the :ref:`bluetooth_mesh_thingy52_srv_testing` guide.
+device, and configured according to the :ref:`bluetooth_mesh_thingy52_srv_testing` guide.
 
 
 User interface
 **************
 
-Large RGB LED:
+Lightwell RGB LED:
    Show the current manually selected RGB color for outgoing RGB messages. Also indicates RGB message delay by blinking
    frequency.
 
@@ -84,17 +87,23 @@ Button:
    Executes input command related to the current orientation of the Thingy:52 device.
 
 Thingy:52 orientations
-=====================
+======================
 
-.. note::
-   The explination of the different orientations of the Thingy:52 can be percieved as somewhat obscure. In that case
-   the best solution is to do some trial and error until you figure out the different orientations for your self.
+How the Thingy:52 is oriented decides the behaviour:
 
-* Speaker orientation - Thingy:52 on its side. Nordic logo towards you. USB port on the left side.
-* Color orientation - Thingy:52 on its side. Nordic logo towards you. USB port pointing up.
-* Manual orientation - Thingy:52 laying flat. Nordic logo towards the ground. Button pointing up.
-* Auto orientation - Thingy:52 on its side. Nordic logo towards you. USB port on the right side.
+* Speaker orientation - Thingy:52 placed on the side, with Nordic logo facing towards you. USB port on the left side.
+* Color orientation - Thingy:52 placed on the side, with Nordic logo facing towards you. USB port pointing up.
+* Manual orientation - Thingy:52 laying flat, with Nordic logo facing the ground. Button pointing up.
+* Auto orientation - Thingy:52 placed on the side, with Nordic logo facing towards you. USB port on the right side.
 
+Color picking
+=============
+
+The color picking algorihm is made with Google color picker as reference:
+
+https://www.google.com/search?q=color+picker
+
+Slide the dot on the color line with the dot in the color window placed in the top right corner.
 
 Building and running
 ********************
@@ -106,9 +115,9 @@ Building and running
 Testing
 =======
 
-.. important::
-   The Mesh client for Thingy:52 cannot fully demonstrate its functionality on its own, and needs at least one device
-   with the :ref:`bluetooth_mesh_thingy52_srv` demo running in the same mesh network.
+.. note::
+   The Bluetooth mesh client for Thingy:52 cannot fully demonstrate its functionality on its own,
+   and needs at least one device with the :ref:`bluetooth_mesh_thingy52_srv` demo running in the same mesh network.
 
 After programming the demo to your Thingy:52, you can test it by using a smartphone with Nordic Semiconductor's nRF Mesh app installed.
 Testing consists of provisioning the device and configuring it for communication with the mesh models.
@@ -146,7 +155,7 @@ Complete the following steps in the nRF Mesh app to configure models:
 #. Configure the Client model publish parameters, which define how the model will send its messages:
 
    1. Tap :guilabel:`SET PUBLICATION`.
-   #. Set the Publish Address to the unicast address of a Thingy:52 server model on another device.
+   #. Set the Publish Address to the unicast address of a Thingy:52 Server model on another device.
    #. Set the Retransmit Count to zero (:guilabel:`Disabled`) to prevent the model from sending each message multiple times.
    #. Leave the rest of the publish parameters at their default values.
    #. Tap :guilabel:`APPLY` to confirm the configuration.
@@ -163,9 +172,9 @@ Inject message manually
 -----------------------
 
 1. Flip the Thingy:52 to the Color orientation.
-#. Press and hold the Thingy:52 button. You should now see the color of the large LED change slowly. Release the button at the desired color.
+#. Press and hold the Thingy:52 button. You should now see the color of the lightwell RGB LED change slowly. Release the button at the desired color.
 #. Flip the Thingy:52 to the Manual orientation.
-#. Press and hold the Thingy:52 button. You should now see the large LED blinking. The frequency of the blinking represents the delay that the outgoing message wil contain.
+#. Press and hold the Thingy:52 button. You should now see the lightwell RGB LED blinking. The frequency of the blinking represents the delay that the outgoing message will contain.
    Release the button at the desired delay.
 #. As soon as you release the button the message will be sent.
 
@@ -186,7 +195,7 @@ This sample uses the following |NCS| libraries:
 
 It also uses the following custom libraries:
 
-* :ref:`bt_mesh_thingy52_cli_readme`
+* :ref:`bt_mesh_thingy52_mod_readme`
 * :ref:`bt_mesh_thingy52_orientation_handler`
 
 In addition, it uses the following Zephyr libraries:

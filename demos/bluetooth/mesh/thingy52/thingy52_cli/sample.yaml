@@ -2,7 +2,7 @@ sample:
   name: Bluetooth Mesh Thingy:52 Client
   description: Bluetooth Mesh Thingy:52 Client
 tests:
-  samples.bluetooth.mesh.thingy52_cli:
+  demos.bluetooth.mesh.thingy52.thingy52_cli:
     build_only: true
     build_on_all: true
     platform_whitelist: thingy52_nrf52832

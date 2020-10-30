@@ -44,7 +44,7 @@ The following table shows the Thingy:52 client composition data for this demo:
 
 The models are used for the following purposes:
 
-* :ref:`bt_mesh_thingy52_cli_readme` instances to control RGB messages. One client per frequency range.
+* :ref:`bt_mesh_thingy52_mod_readme` instances to control RGB messages. One client per frequency range.
 * Config Server allows configurator devices to configure the node remotely.
 * Health Server provides ``attention`` callbacks that are used during provisioning to call your attention to the device.
   These callbacks trigger blinking of the LEDs.
@@ -54,9 +54,9 @@ Audio processing
 =================
 
 The Thingy:52 microphone outputs PDM data that must be processed. This is done by ARM DSP. By doing Fast Fourier Transform (FFT) and computing magnitue for each array element,
-raw PDM data is converted to a discrete spectrum array. Each element of the spectrum array represent one frequency, and the value of the element is magnitue.
+raw PDM data is converted to a discrete spectrum array. Each element of the spectrum array represents one frequency, and the value of the element is magnitue.
 As default, a PDM buffer size of 512 is used. This generates a discrete spectrum array of 256 (half of the PDM buffer size).
-To find what frequency each element of the spectrum array represent, use this formula:
+To find what frequency each element of the spectrum array represents, use this formula:
 
 .. math::
 
@@ -157,7 +157,7 @@ This sample uses the following |NCS| libraries:
 
 It also uses the following custom libraries:
 
-* :ref:`bt_mesh_thingy52_cli_readme`
+* :ref:`bt_mesh_thingy52_mod_readme`
 
 In addition, it uses the following Zephyr libraries:
 

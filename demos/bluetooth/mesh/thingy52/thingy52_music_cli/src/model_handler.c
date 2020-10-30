@@ -11,7 +11,7 @@
 #include <nrfx_pdm.h>
 #include <dk_buttons_and_leds.h>
 #include "model_handler.h"
-#include "thingy52_cli.h"
+#include "thingy52_mod.h"
 
 #define ARM_MATH_CM0PLUS
 #include <arm_math.h>
@@ -19,6 +19,9 @@
 #define PDM_SIZE 512
 #define SPECTRUM_SIZE (PDM_SIZE / 2)
 #define NUM_FREQ_BANDS 3
+#define HARMONIC_TONES_REDUCTION 100
+#define VOLUME_DIFF_CHECKER_VALUE 5000
+#define VOLUME_DIVIDER_VALUE 1000
 
 static arm_rfft_instance_q15 S15;
 
@@ -32,13 +35,13 @@ struct mic_data {
 	struct k_delayed_work microphone_work;
 };
 
-static struct device *io_expander;
+static const struct device *io_expander;
 
 static struct mic_data mic_data = {
 	.pdm_config = NRFX_PDM_DEFAULT_CONFIG(26, 25),
 };
-static struct bt_mesh_thingy52_cli thingy52_cli[NUM_FREQ_BANDS] = {
-	[0 ... NUM_FREQ_BANDS - 1] = BT_MESH_THINGY52_CLI_INIT
+static struct bt_mesh_thingy52_mod thingy52_mod[NUM_FREQ_BANDS] = {
+	[0 ... NUM_FREQ_BANDS - 1] = BT_MESH_THINGY52_MOD_INIT(NULL)
 };
 
 static inline int nrfx_err_code_check(nrfx_err_t nrfx_err)
@@ -58,7 +61,8 @@ static void button_handler(uint32_t pressed, uint32_t changed)
 			err |= nrfx_err_code_check(nrfx_pdm_start());
 
 			for (int i = GREEN_LED; i <= RED_LED; i++) {
-				err |= sx1509b_pwm_pin_set(io_expander, i, 20);
+				err |= sx1509b_led_intensity_pin_set(
+					io_expander, i, 20);
 			}
 
 			k_delayed_work_submit(&mic_data.microphone_work,
@@ -67,7 +71,8 @@ static void button_handler(uint32_t pressed, uint32_t changed)
 			k_delayed_work_cancel(&mic_data.microphone_work);
 
 			for (int i = GREEN_LED; i <= RED_LED; i++) {
-				err |= sx1509b_pwm_pin_set(io_expander, i, 0);
+				err |= sx1509b_led_intensity_pin_set(
+					io_expander, i, 0);
 			}
 
 			err |= nrfx_err_code_check(nrfx_pdm_stop());
@@ -90,7 +95,7 @@ static void button_and_led_init(void)
 	err |= dk_buttons_init(button_handler);
 
 	for (int i = GREEN_LED; i <= RED_LED; i++) {
-		err |= sx1509b_pwm_pin_configure(io_expander, i);
+		err |= sx1509b_led_intensity_pin_configure(io_expander, i);
 	}
 
 	if (err) {
@@ -139,11 +144,11 @@ static void pdm_event_handler(nrfx_pdm_evt_t const *p_evt)
 
 static void send_color_helper(int iterator, uint16_t value)
 {
-	int err = 0;
+	int err;
 
 	static struct bt_mesh_thingy52_rgb_msg msg = {
 		.ttl = 0,
-		.delay = 0xFFFF,
+		.duration = 0xFFFFFFFF,
 		.speaker_on = false,
 	};
 
@@ -152,22 +157,23 @@ static void send_color_helper(int iterator, uint16_t value)
 		msg.color.red = 0;
 		msg.color.green = 0;
 		msg.color.blue = value;
-		err |= bt_mesh_thingy52_cli_rgb_set(&thingy52_cli[iterator],
-						    NULL, &msg);
+		err = bt_mesh_thingy52_mod_rgb_set(&thingy52_mod[iterator],
+						   NULL, &msg);
 	} else if (iterator == 1) {
 		msg.color.red = 0;
 		msg.color.green = value;
 		msg.color.blue = 0;
-		err |= bt_mesh_thingy52_cli_rgb_set(&thingy52_cli[iterator],
-						    NULL, &msg);
+		err = bt_mesh_thingy52_mod_rgb_set(&thingy52_mod[iterator],
+						   NULL, &msg);
 	} else if (iterator == 2) {
 		msg.color.red = value;
 		msg.color.green = 0;
 		msg.color.blue = 0;
-		err |= bt_mesh_thingy52_cli_rgb_set(&thingy52_cli[iterator],
-						    NULL, &msg);
+		err = bt_mesh_thingy52_mod_rgb_set(&thingy52_mod[iterator],
+						   NULL, &msg);
 	} else {
 		printk("Unknown iterator\n");
+		return;
 	}
 
 	if (err) {
@@ -178,57 +184,51 @@ static void send_color_helper(int iterator, uint16_t value)
 /* Values in the spectrum array are used as raw values (not q15) */
 static void microphone_work_handler(struct k_work *work)
 {
-	static uint16_t freq_sum[NUM_FREQ_BANDS];
 	static uint16_t prev_freq_sum[NUM_FREQ_BANDS];
-	static uint16_t total_sum;
-	static uint16_t checker;
-	static uint8_t divider;
-	static uint16_t adj_freq_sum;
+	uint16_t freq_sum[NUM_FREQ_BANDS];
+	uint16_t total_sum = 0;
+	uint16_t volume_diff_checker = 0;
+	uint8_t volume_divider = 1;
 
 	if (mic_data.fft_result_ready) {
 		int i;
 
-		for (i = 0; i < NUM_FREQ_BANDS; i++) {
-			freq_sum[i] = 0;
-		}
+		memset(freq_sum, 0, sizeof(freq_sum));
 
-		/* Should create the amount of for-loops
-		 * that macthes NUM_FREQ_BANDS
-		 */
-		for (i = 0; i <= 80; i++) {
-			if (mic_data.spectrum[i] > 100) {
-				freq_sum[0] += mic_data.spectrum[i];
+		for (int i = 0; i < SPECTRUM_SIZE; i++) {
+			/* Using harmonic tones reduction because
+			 * the microphone can pick up many small harmonic tones
+			 */
+			if (mic_data.spectrum[i] > HARMONIC_TONES_REDUCTION) {
+				freq_sum[(NUM_FREQ_BANDS * i) /
+					SPECTRUM_SIZE] +=
+					mic_data.spectrum[i];
+				total_sum += mic_data.spectrum[i];
 			}
 		}
 
-		for (i = 81; i <= 115; i++) {
-			if (mic_data.spectrum[i] > 100) {
-				freq_sum[1] += mic_data.spectrum[i];
-			}
-		}
-
-		for (i = 116; i <= 255; i++) {
-			if (mic_data.spectrum[i] > 100) {
-				freq_sum[2] += mic_data.spectrum[i];
-			}
-		}
-
-		total_sum = freq_sum[0] + freq_sum[1] + freq_sum[2];
-
-		/* A basic way of handling volume changes */
 		if (total_sum) {
-			checker = total_sum / (4 + total_sum / 5000);
-			divider = 6 + total_sum / 1000;
+			/* volume_diff_checker and volume_divider is used as a
+			 * basic way of handling volume changes
+			 */
+			volume_diff_checker =
+				total_sum /
+				(4 + total_sum / VOLUME_DIFF_CHECKER_VALUE);
+			volume_divider = 6 + total_sum / VOLUME_DIVIDER_VALUE;
 		}
 
 		for (i = 0; i < NUM_FREQ_BANDS; i++) {
-			if (freq_sum[i]) {
-				if (freq_sum[i] - prev_freq_sum[i] > checker) {
-					adj_freq_sum = freq_sum[i] / divider;
+			uint16_t adj_freq_sum;
 
-					if (adj_freq_sum > 255) {
-						adj_freq_sum = 255;
-					}
+			if (freq_sum[i]) {
+				/* Checking if volume has increased enough
+				 * to trigger a sending
+				 */
+				if (freq_sum[i] - prev_freq_sum[i] >
+				    volume_diff_checker) {
+					adj_freq_sum = MIN(
+						freq_sum[i] / volume_divider,
+						255);
 
 					send_color_helper(i, adj_freq_sum);
 
@@ -266,25 +266,12 @@ static void microphone_init(void)
 	k_delayed_work_init(&mic_data.microphone_work, microphone_work_handler);
 }
 
-/** Configuration server definition */
-static struct bt_mesh_cfg_srv cfg_srv = {
-	.relay = IS_ENABLED(CONFIG_BT_MESH_RELAY),
-	.beacon = BT_MESH_BEACON_ENABLED,
-	.frnd = IS_ENABLED(CONFIG_BT_MESH_FRIEND),
-	.gatt_proxy = IS_ENABLED(CONFIG_BT_MESH_GATT_PROXY),
-	.default_ttl = 7,
-
-	/* 3 transmissions with 20ms interval */
-	.net_transmit = BT_MESH_TRANSMIT(2, 20),
-	.relay_retransmit = BT_MESH_TRANSMIT(2, 20),
-};
-
 static void attention_on(struct bt_mesh_model *mod)
 {
 	int err = 0;
 
 	for (int i = GREEN_LED; i <= RED_LED; i++) {
-		err |= sx1509b_pwm_pin_set(io_expander, i, 255);
+		err |= sx1509b_led_intensity_pin_set(io_expander, i, 255);
 	}
 
 	if (err) {
@@ -297,7 +284,7 @@ static void attention_off(struct bt_mesh_model *mod)
 	int err = 0;
 
 	for (int i = GREEN_LED; i <= RED_LED; i++) {
-		err |= sx1509b_pwm_pin_set(io_expander, i, 0);
+		err |= sx1509b_led_intensity_pin_set(io_expander, i, 0);
 	}
 
 	if (err) {
@@ -316,21 +303,22 @@ static struct bt_mesh_health_srv health_srv = {
 
 BT_MESH_HEALTH_PUB_DEFINE(health_pub, 0);
 
+/* The number of Thingy:52 models should macth NUM_FREQ_BANDS */
 static struct bt_mesh_elem elements[] = {
 	BT_MESH_ELEM(1,
-		     BT_MESH_MODEL_LIST(BT_MESH_MODEL_CFG_SRV(&cfg_srv),
+		     BT_MESH_MODEL_LIST(BT_MESH_MODEL_CFG_SRV,
 					BT_MESH_MODEL_HEALTH_SRV(&health_srv,
 								 &health_pub)),
 		     BT_MESH_MODEL_NONE),
 	BT_MESH_ELEM(2, BT_MESH_MODEL_NONE,
 		     BT_MESH_MODEL_LIST(
-			     BT_MESH_MODEL_THINGY52_CLI(&thingy52_cli[0]))),
+			     BT_MESH_MODEL_THINGY52_MOD(&thingy52_mod[0]))),
 	BT_MESH_ELEM(3, BT_MESH_MODEL_NONE,
 		     BT_MESH_MODEL_LIST(
-			     BT_MESH_MODEL_THINGY52_CLI(&thingy52_cli[1]))),
+			     BT_MESH_MODEL_THINGY52_MOD(&thingy52_mod[1]))),
 	BT_MESH_ELEM(4, BT_MESH_MODEL_NONE,
 		     BT_MESH_MODEL_LIST(
-			     BT_MESH_MODEL_THINGY52_CLI(&thingy52_cli[2]))),
+			     BT_MESH_MODEL_THINGY52_MOD(&thingy52_mod[2]))),
 };
 
 static const struct bt_mesh_comp comp = {
@@ -341,7 +329,7 @@ static const struct bt_mesh_comp comp = {
 
 const struct bt_mesh_comp *model_handler_init(void)
 {
-	io_expander = device_get_binding(DT_PROP(DT_NODELABEL(sx1509b), label));
+	io_expander = device_get_binding(DT_LABEL(DT_NODELABEL(sx1509b)));
 
 	if (io_expander == NULL) {
 		printk("Failure occurred while binding I/O expander\n");

@@ -32,11 +32,15 @@ enum orientations {
 
 /** @brief Get current orientation of the Thingy:52 device.
  *
- * @param[in] dev Pointer to the device structure of low power accelerometer;
- *
  * @returns Current orientation of the Thingy:52 device.
  */
-uint8_t orientation_get(struct device *dev);
+uint8_t orientation_get(void);
+
+/** @brief Initialize orientation handler of the Thingy:52 device.
+ *
+ * @return 0 on success, -ENODEV on failure.
+ */
+int orientation_init(void);
 
 #ifdef __cplusplus
 }

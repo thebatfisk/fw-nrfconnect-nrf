@@ -21,7 +21,7 @@ The following code block examplifies the initialization and usage of the API.
    	uint8_t orr = orientation_get(orientation_dev);
    }
 
-In addition the user must ensure that the concatination buffer size is defined in the :file:`app.overlay` file of the project:
+In addition, the user must ensure that the concatination buffer size is defined in the :file:`app.overlay` file of the project:
 
 .. code-block:: console
 
@@ -31,7 +31,7 @@ In addition the user must ensure that the concatination buffer size is defined i
 
 
 API documentation
-=================
+*****************
 
 | Header file: :file:`demos/bluetooth/mesh/thingy52/common/orientation_handler.h`
 | Source file: :file:`demos/bluetooth/mesh/thingy52/common/orientation_handler.c`

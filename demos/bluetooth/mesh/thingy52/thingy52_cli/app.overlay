@@ -6,7 +6,3 @@
 &sx1509b {
 	status = "okay";
 };
-
-&i2c1 {
-	concat-buf-size = <6>;
-};
