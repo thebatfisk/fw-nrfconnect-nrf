@@ -11,6 +11,9 @@ project(NONE)
 
 target_sources(app PRIVATE
 	src/main.c
+	src/gw_nfc.c
+	src/gw_display_shield.c
+	src/gw_display_mcp23017.c
 	../common/slip.c
 	../common/mqtt_serial.c
 	../common/uart_simple.c)

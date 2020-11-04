@@ -13,65 +13,11 @@ static struct unprov_devices unprov_devs;
 
 static const uint16_t net_idx;
 static const uint16_t app_idx;
+static struct bt_mesh_comp gw_comp_data;
 static uint16_t self_addr = 1, added_node_addr;
 static const uint8_t dev_uuid[16] = { 0xdd, 0xdd };
 
 K_SEM_DEFINE(sem_node_added, 0, 1);
-
-static struct bt_mesh_cfg_srv cfg_srv = {
-	.relay = BT_MESH_RELAY_ENABLED,
-	.beacon = BT_MESH_BEACON_DISABLED,
-	.frnd = BT_MESH_FRIEND_NOT_SUPPORTED,
-	.default_ttl = 7,
-
-	/* 3 transmissions with 20ms interval */
-	.net_transmit = BT_MESH_TRANSMIT(2, 20),
-	.relay_retransmit = BT_MESH_TRANSMIT(3, 20),
-};
-
-static struct bt_mesh_cfg_cli cfg_cli = {};
-
-static void health_current_status(struct bt_mesh_health_cli *cli, uint16_t addr,
-				  uint8_t test_id, uint16_t cid,
-				  uint8_t *faults, size_t fault_count)
-{
-	size_t i;
-
-	printk("Health Current Status from 0x%04x\n", addr);
-
-	if (!fault_count) {
-		printk("Health Test ID 0x%02x Company ID 0x%04x: no faults\n",
-		       test_id, cid);
-		return;
-	}
-
-	printk("Health Test ID 0x%02x Company ID 0x%04x Fault Count %zu:\n",
-	       test_id, cid, fault_count);
-
-	for (i = 0; i < fault_count; i++) {
-		printk("\t0x%02x\n", faults[i]);
-	}
-}
-
-static struct bt_mesh_health_cli health_cli = {
-	.current_status = health_current_status,
-};
-
-static struct bt_mesh_model root_models[] = {
-	BT_MESH_MODEL_CFG_SRV(&cfg_srv),
-	BT_MESH_MODEL_CFG_CLI(&cfg_cli),
-	BT_MESH_MODEL_HEALTH_CLI(&health_cli),
-};
-
-static struct bt_mesh_elem elements[] = {
-	BT_MESH_ELEM(0, root_models, BT_MESH_MODEL_NONE),
-};
-
-static const struct bt_mesh_comp comp = {
-	.cid = BT_COMP_ID_LF,
-	.elem = elements,
-	.elem_count = ARRAY_SIZE(elements),
-};
 
 static void setup_cdb(void)
 {
@@ -115,9 +61,35 @@ static void configure_self(struct bt_mesh_cdb_node *self)
 				       app_idx, BT_MESH_MODEL_ID_HEALTH_CLI,
 				       NULL);
 	if (err < 0) {
-		printk("Failed to bind app-key (err %d)\n", err);
+		printk("Failed to bind health client app-key (err %d)\n", err);
 		return;
 	}
+
+	err = bt_mesh_cfg_mod_app_bind(self->net_idx, self->addr, (self->addr + 1),
+				       app_idx, BT_MESH_MODEL_ID_GEN_LEVEL_CLI,
+				       NULL);
+	if (err < 0) {
+		printk("Failed to bind level client app-key (err %d)\n", err);
+		return;
+	}
+
+	err = bt_mesh_cfg_mod_app_bind(self->net_idx, self->addr, (self->addr + 1),
+				       app_idx, BT_MESH_MODEL_ID_GEN_ONOFF_CLI,
+				       NULL);
+	if (err < 0) {
+		printk("Failed to bind onoff client app-key (err %d)\n", err);
+		return;
+	}
+
+	err = bt_mesh_cfg_mod_app_bind(self->net_idx, self->addr, (self->addr + 1),
+				       app_idx, BT_MESH_MODEL_ID_GEN_ONOFF_SRV,
+				       NULL);
+	if (err < 0) {
+		printk("Failed to bind onoff server app-key (err %d)\n", err);
+		return;
+	}
+
+	// TODO: bt_mesh_cfg_mod_sub_add() and bt_mesh_cfg_mod_pub_set()
 
 	atomic_set_bit(self->flags, BT_MESH_CDB_NODE_CONFIGURED);
 
@@ -273,15 +245,24 @@ static void prov_beac_timeout_work_handler(struct k_work *work)
 	k_delayed_work_submit(&prov_beac_timeout_work, K_MSEC(1000));
 }
 
-int bt_ready(void)
+void set_comp_data(const struct bt_mesh_comp comp_data)
 {
-	uint8_t net_key[16], dev_key[16];
-	int err;
+	gw_comp_data = comp_data;
+}
 
-	err = bt_mesh_init(&prov, &comp);
+void bt_ready(int err)
+{
+	if (err) {
+		printk("Bluetooth init failed (err %d)\n", err);
+		return;
+	}
+
+	uint8_t net_key[16], dev_key[16];
+
+	err = bt_mesh_init(&prov, &gw_comp_data);
 	if (err) {
 		printk("Initializing mesh failed (err %d)\n", err);
-		return err;
+		return;
 	}
 
 	printk("Mesh initialized\n");
@@ -298,7 +279,7 @@ int bt_ready(void)
 		printk("Using stored CDB\n");
 	} else if (err) {
 		printk("Failed to create CDB (err %d)\n", err);
-		return err;
+		return;
 	} else {
 		printk("Created CDB\n");
 		setup_cdb();
@@ -312,7 +293,7 @@ int bt_ready(void)
 		printk("Using stored settings\n");
 	} else if (err) {
 		printk("Provisioning failed (err %d)\n", err);
-		return err;
+		return;
 	} else {
 		printk("Provisioning completed\n");
 	}
@@ -322,7 +303,7 @@ int bt_ready(void)
 	k_delayed_work_init(&prov_beac_timeout_work, prov_beac_timeout_work_handler);
 	k_delayed_work_submit(&prov_beac_timeout_work, K_NO_WAIT);
 
-	return 0;
+	return;
 }
 
 int provision_device(uint8_t dev_num, const uint8_t *uuid)

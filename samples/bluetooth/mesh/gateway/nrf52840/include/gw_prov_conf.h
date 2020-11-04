@@ -8,6 +8,7 @@
 #define GW_PROVISIONING_H__
 
 #include <bluetooth/bluetooth.h>
+#include <bluetooth/mesh.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -38,7 +39,9 @@ struct room_info {
 	uint16_t group_addr;
 };
 
-int bt_ready(void);
+void set_comp_data(const struct bt_mesh_comp comp_data);
+
+void bt_ready(int err);
 
 int provision_device(uint8_t dev_num, const uint8_t *uuid);
 

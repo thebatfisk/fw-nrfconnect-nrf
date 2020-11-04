@@ -10,10 +10,11 @@
 #include <stdlib.h>
 #include "uart_simple.h"
 #include "mqtt_serial.h"
+#include "gw_prov_conf.h"
 
 #include <bluetooth/bluetooth.h>
+#include <bluetooth/mesh.h>
 #include <bluetooth/mesh/models.h>
-#include <bluetooth/mesh/dk_prov.h>
 #include <dk_buttons_and_leds.h>
 
 #include <random/rand32.h>
@@ -301,49 +302,60 @@ struct bt_mesh_onoff_cli gen_onoff_cli =
 struct bt_mesh_onoff_srv gen_onoff_srv = BT_MESH_ONOFF_SRV_INIT(&gen_on_off_cb);
 struct bt_mesh_lvl_cli gen_lvl_cli = BT_MESH_LVL_CLI_INIT(gen_lvl_status_cb);
 
-/** Configuration server definition */
+static struct bt_mesh_model gateway_models[] = {
+	BT_MESH_MODEL_LVL_CLI(&gen_lvl_cli),
+	BT_MESH_MODEL_ONOFF_CLI(&gen_onoff_cli),
+	BT_MESH_MODEL_ONOFF_SRV(&gen_onoff_srv),
+};
+
 static struct bt_mesh_cfg_srv cfg_srv = {
-	.relay = IS_ENABLED(CONFIG_BT_MESH_RELAY),
-	.beacon = BT_MESH_BEACON_ENABLED,
-	.frnd = IS_ENABLED(CONFIG_BT_MESH_FRIEND),
-	.gatt_proxy = IS_ENABLED(CONFIG_BT_MESH_GATT_PROXY),
+	.relay = BT_MESH_RELAY_ENABLED,
+	.beacon = BT_MESH_BEACON_DISABLED,
+	.frnd = BT_MESH_FRIEND_NOT_SUPPORTED,
 	.default_ttl = 7,
 
 	/* 3 transmissions with 20ms interval */
 	.net_transmit = BT_MESH_TRANSMIT(2, 20),
-	.relay_retransmit = BT_MESH_TRANSMIT(2, 20),
+	.relay_retransmit = BT_MESH_TRANSMIT(3, 20),
 };
 
-static void attention_on(struct bt_mesh_model *mod)
+static struct bt_mesh_cfg_cli cfg_cli = {};
+
+static void health_current_status(struct bt_mesh_health_cli *cli, uint16_t addr,
+				  uint8_t test_id, uint16_t cid,
+				  uint8_t *faults, size_t fault_count)
 {
-	printk("Attention On\n");
+	size_t i;
+
+	printk("Health Current Status from 0x%04x\n", addr);
+
+	if (!fault_count) {
+		printk("Health Test ID 0x%02x Company ID 0x%04x: no faults\n",
+		       test_id, cid);
+		return;
+	}
+
+	printk("Health Test ID 0x%02x Company ID 0x%04x Fault Count %zu:\n",
+	       test_id, cid, fault_count);
+
+	for (i = 0; i < fault_count; i++) {
+		printk("\t0x%02x\n", faults[i]);
+	}
 }
 
-static void attention_off(struct bt_mesh_model *mod)
-{
-	printk("Attention Off\n");
-}
-
-static const struct bt_mesh_health_srv_cb health_srv_cb = {
-	.attn_on = attention_on,
-	.attn_off = attention_off,
+static struct bt_mesh_health_cli health_cli = {
+	.current_status = health_current_status,
 };
 
-static struct bt_mesh_health_srv health_srv = {
-	.cb = &health_srv_cb,
+static struct bt_mesh_model root_models[] = {
+	BT_MESH_MODEL_CFG_SRV(&cfg_srv),
+	BT_MESH_MODEL_CFG_CLI(&cfg_cli),
+	BT_MESH_MODEL_HEALTH_CLI(&health_cli),
 };
-
-BT_MESH_HEALTH_PUB_DEFINE(health_pub, 0);
 
 static struct bt_mesh_elem elements[] = {
-	BT_MESH_ELEM(1,
-		     BT_MESH_MODEL_LIST(
-			     BT_MESH_MODEL_CFG_SRV(&cfg_srv),
-			     BT_MESH_MODEL_HEALTH_SRV(&health_srv, &health_pub),
-			     BT_MESH_MODEL_LVL_CLI(&gen_lvl_cli),
-			     BT_MESH_MODEL_ONOFF_CLI(&gen_onoff_cli),
-			     BT_MESH_MODEL_ONOFF_SRV(&gen_onoff_srv)),
-		     BT_MESH_MODEL_NONE),
+	BT_MESH_ELEM(0, root_models, BT_MESH_MODEL_NONE),
+	BT_MESH_ELEM(1, gateway_models, BT_MESH_MODEL_NONE),
 };
 
 static const struct bt_mesh_comp comp = {
@@ -351,34 +363,6 @@ static const struct bt_mesh_comp comp = {
 	.elem = elements,
 	.elem_count = ARRAY_SIZE(elements),
 };
-
-static void bt_ready(int err)
-{
-	if (err) {
-		printk("Bluetooth init failed (err %d)\n", err);
-		return;
-	}
-
-	printk("Bluetooth initialized\n");
-
-	dk_leds_init();
-	dk_buttons_init(NULL);
-
-	err = bt_mesh_init(bt_mesh_dk_prov_init(), &comp);
-	if (err) {
-		printk("Initializing mesh failed (err %d)\n", err);
-		return;
-	}
-
-	if (IS_ENABLED(CONFIG_SETTINGS)) {
-		settings_load();
-	}
-
-	/* This will be a no-op if settings_load() loaded provisioning info */
-	bt_mesh_prov_enable(BT_MESH_PROV_ADV | BT_MESH_PROV_GATT);
-
-	printk("Mesh initialized\n");
-}
 
 void mqtt_msg_handler(uint16_t model_id, uint16_t addr, uint8_t *data,
 		      uint16_t data_len)
@@ -478,6 +462,8 @@ void main(void)
 	cJSON_Init();
 	uart_simple_init(NULL);
 	uart_simple_channel_create(&mqtt_serial_chan);
+
+	set_comp_data(comp);
 
 	err = bt_enable(bt_ready);
 	if (err) {
