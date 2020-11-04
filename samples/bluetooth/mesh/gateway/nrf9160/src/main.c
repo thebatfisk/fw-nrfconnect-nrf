@@ -19,6 +19,8 @@
 #endif
 #include "uart_simple.h"
 #include "mqtt_serial.h"
+#include "gw_nfc.h"
+#include "gw_display_shield.h"
 
 void mqtt_rx_callback(struct net_buf *get_buf);
 
@@ -384,19 +386,32 @@ void main(void)
 	int err = 0;
 
 	printk("MQTT bridge nrf9160 started\n");
-	modem_configure();
+	// modem_configure();
 
-	err |= client_init(&client);
-	err |= mqtt_connect(&client);
-	err |= fds_init(&client);
+	// err |= client_init(&client);
+	// err |= mqtt_connect(&client);
+	// err |= fds_init(&client);
 
-	if (err != 0) {
-		printk("MQTT initialization failed\n");
-		return;
-	}
+	// if (err != 0) {
+	// 	printk("MQTT initialization failed\n");
+	// 	return;
+	// }
 
-	uart_simple_init(NULL);
-	uart_simple_channel_create(&mqtt_serial_chan);
+	// uart_simple_init(NULL);
+	// uart_simple_channel_create(&mqtt_serial_chan);
 
-	mqtt_rx_thread_create();
+	// mqtt_rx_thread_create();
+
+	display_shield_init();
+
+	display_set_cursor(0, 0);
+	display_write_string("BT Mesh Gateway");
+	display_set_cursor(0, 1);
+	display_write_string("Press SELECT");
+
+	printk("Written to display\n");
+
+	// while (1) {
+
+	// }
 }

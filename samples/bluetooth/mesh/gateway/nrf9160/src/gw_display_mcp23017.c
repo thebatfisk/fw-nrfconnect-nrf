@@ -22,7 +22,13 @@ void mcp23017_init(void)
 	uint8_t reset_a_inputs[2] = { MCP23017_IODIRA, 0xFF };
 	uint8_t reset_b_inputs[2] = { MCP23017_IODIRB, 0xFF };
 
-	i2c_dev = device_get_binding(DT_PROP(DT_NODELABEL(i2c0), label));
+	i2c_dev = device_get_binding(DT_PROP(DT_NODELABEL(i2c2), label));
+
+	if (i2c_dev == NULL) {
+		printk("Error initiating I2C device\n");
+	} else {
+		printk("I2C device initiated\n");
+	}
 
 	i2c_write(i2c_dev, reset_a_inputs, 2, MCP23017_ADDRESS);
 	i2c_write(i2c_dev, reset_b_inputs, 2, MCP23017_ADDRESS);
