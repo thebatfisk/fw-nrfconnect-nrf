@@ -26,8 +26,7 @@ void mcp23017_init(void)
 
 	if (i2c_dev == NULL) {
 		printk("Error initiating I2C device\n");
-	} else {
-		printk("I2C device initiated\n");
+		return;
 	}
 
 	i2c_write(i2c_dev, reset_a_inputs, 2, MCP23017_ADDRESS);

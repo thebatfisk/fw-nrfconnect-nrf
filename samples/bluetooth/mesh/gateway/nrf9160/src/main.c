@@ -19,14 +19,21 @@
 #endif
 #include "uart_simple.h"
 #include "mqtt_serial.h"
+#include "prov_conf_serial.h"
 #include "gw_nfc.h"
 #include "gw_display_shield.h"
 
 void mqtt_rx_callback(struct net_buf *get_buf);
+void prov_conf_rx_callback(struct net_buf *get_buf);
 
 static struct uart_channel_ctx mqtt_serial_chan = {
 	.channel_id = 1,
 	.rx_cb = mqtt_rx_callback,
+};
+
+static struct uart_channel_ctx prov_conf_serial_chan = {
+	.channel_id = 2,
+	.rx_cb = prov_conf_rx_callback,
 };
 
 /* Test thread */
@@ -380,26 +387,220 @@ void mqtt_rx_callback(struct net_buf *get_buf)
 		mqtt_publish(&client, &param);
 }
 
+// **************** Erik code below (until main) *****************
+
+#define BASE_GROUP_ADDR 0xc000
+
+K_SEM_DEFINE(sem_gw_system_state, 0, 1);
+K_SEM_DEFINE(sem_choose_room, 0, 1);
+K_SEM_DEFINE(sem_prov_link_active, 0, 1);
+K_SEM_DEFINE(sem_get_unprov_dev_num, 0, 1);
+K_SEM_DEFINE(sem_get_model_info, 0, 1);
+
+enum gw_system_states
+{
+	s_start = 0,
+	s_idle,
+	s_blink_dev,
+	s_prov_conf_dev,
+	s_nfc_start,
+	s_nfc_stop,
+};
+
+struct room_info {
+	const char *name;
+	uint16_t group_addr;
+};
+
+// TODO: Unique node names
+const struct room_info rooms[] = {
+	[0] = { .name = "Living room    ", .group_addr = BASE_GROUP_ADDR },
+	[1] = { .name = "Kitchen        ", .group_addr = BASE_GROUP_ADDR + 1 },
+	[2] = { .name = "Bedroom        ", .group_addr = BASE_GROUP_ADDR + 2 },
+	[3] = { .name = "Bathroom       ", .group_addr = BASE_GROUP_ADDR + 3 },
+	[4] = { .name = "Hallway        ", .group_addr = BASE_GROUP_ADDR + 4 }
+};
+
+static int gw_system_state = s_start;
+static bool take_sem = true;
+
+static uint8_t curr_but_pressed;
+static uint8_t nfc_uuid[16];
+static bool uuid_from_nfc;
+static bool update_unprov_devs;
+static uint8_t chosen_dev;
+static uint8_t room_iterator;
+static bool room_chosen;
+static bool prov_link_active;
+static uint8_t unprov_dev_num;
+static struct model_info mod_inf;
+
+static struct k_delayed_work button_work;
+
+static void button_work_handler(struct k_work *work)
+{
+	uint8_t button_state;
+	uint8_t serial_opcode;
+
+	button_state = display_read_buttons();
+
+	if ((button_state & BUTTON_UP) && (curr_but_pressed != BUTTON_UP)) {
+		printk("BUTTON UP\n");
+		curr_but_pressed = BUTTON_UP;
+	} else if (button_state & BUTTON_DOWN && (curr_but_pressed != BUTTON_DOWN)) {
+		printk("BUTTON DOWN\n");
+		curr_but_pressed = BUTTON_DOWN;
+	} else if (button_state & BUTTON_LEFT && (curr_but_pressed != BUTTON_LEFT)) {
+		printk("BUTTON LEFT\n");
+		curr_but_pressed = BUTTON_LEFT;
+
+		if (gw_system_state == s_start || gw_system_state == s_idle) {
+			gw_system_state = s_nfc_start;
+			k_sem_give(&sem_gw_system_state);
+		} else if (gw_system_state == s_blink_dev) {
+			serial_opcode = oc_prov_link_active;
+			uart_simple_send(&prov_conf_serial_chan, &serial_opcode, 1);
+			k_sem_take(&sem_prov_link_active, K_FOREVER);
+
+			if (!prov_link_active) {
+				if (chosen_dev > 0) {
+					chosen_dev--;
+					k_sem_give(&sem_gw_system_state);
+				}
+			}
+		} else if (gw_system_state == s_prov_conf_dev) {
+			if (room_iterator > 0) {
+				room_iterator--;
+				k_sem_give(&sem_choose_room);
+			}
+		}
+	} else if (button_state & BUTTON_RIGHT && (curr_but_pressed != BUTTON_RIGHT)) {
+		printk("BUTTON RIGHT\n");
+		curr_but_pressed = BUTTON_RIGHT;
+
+		if (gw_system_state == s_nfc_start) {
+			gw_system_state = s_nfc_stop;
+			k_sem_give(&sem_gw_system_state);
+		} else if (gw_system_state == s_blink_dev) {
+			serial_opcode = oc_prov_link_active;
+			uart_simple_send(&prov_conf_serial_chan, &serial_opcode, 1);
+			k_sem_take(&sem_prov_link_active, K_FOREVER);
+
+			if (!prov_link_active) {
+				serial_opcode = oc_unprov_dev_num;
+				uart_simple_send(&prov_conf_serial_chan, &serial_opcode, 1);
+				k_sem_take(&sem_get_unprov_dev_num, K_FOREVER);
+
+				if (chosen_dev < unprov_dev_num - 1) {
+					chosen_dev++;
+					k_sem_give(&sem_gw_system_state);
+				}
+			}
+		} else if (gw_system_state == s_prov_conf_dev) {
+			if (room_iterator < (sizeof(rooms) / sizeof(rooms[0]) - 1)) {
+				room_iterator++;
+				k_sem_give(&sem_choose_room);
+			}
+		}
+	} else if (button_state & BUTTON_SELECT && (curr_but_pressed != BUTTON_SELECT)) {
+		printk("BUTTON SELECT\n");
+		curr_but_pressed = BUTTON_SELECT;
+
+		if (gw_system_state == s_start) {
+			gw_system_state = s_idle;
+			k_sem_give(&sem_gw_system_state);
+		} else if (gw_system_state == s_idle) {
+			serial_opcode = oc_unprov_dev_num;
+			uart_simple_send(&prov_conf_serial_chan, &serial_opcode, 1);
+			k_sem_take(&sem_get_unprov_dev_num, K_FOREVER);
+
+			if (unprov_dev_num > 0) {
+				gw_system_state = s_blink_dev;
+				k_sem_give(&sem_gw_system_state);
+			}
+		} else if (gw_system_state == s_blink_dev) {
+			serial_opcode = oc_prov_link_active;
+			uart_simple_send(&prov_conf_serial_chan, &serial_opcode, 1);
+			k_sem_take(&sem_prov_link_active, K_FOREVER);
+
+			if (!prov_link_active) {
+				gw_system_state = s_prov_conf_dev;
+				k_sem_give(&sem_gw_system_state);
+			}
+		} else if (gw_system_state == s_prov_conf_dev) {
+			room_chosen = true;
+			k_sem_give(&sem_choose_room);
+		}
+	} else if (!button_state) {
+		curr_but_pressed = 0;
+	}
+
+	k_delayed_work_submit(&button_work, K_MSEC(100));
+}
+
+static struct k_delayed_work unprov_devs_work;
+
+static void unprov_devs_work_handler(struct k_work *work)
+{
+	uint8_t serial_opcode;
+
+	serial_opcode = oc_unprov_dev_num;
+	uart_simple_send(&prov_conf_serial_chan, &serial_opcode, 1);
+	k_sem_take(&sem_get_unprov_dev_num, K_FOREVER);
+
+	if (update_unprov_devs) {
+		display_set_cursor(0, 0);
+		display_write_number(unprov_dev_num);
+	}
+
+	k_delayed_work_submit(&unprov_devs_work, K_MSEC(100));
+}
+
 void nfc_rx(struct gw_nfc_rx_data data)
 {
 	printk("NFC RX CALLBACK\n");
-	// if (data.length == 16 && gw_system_state == s_nfc_start) {
-	// 	memcpy(nfc_uuid, data.value, 16);
-	// 	uuid_from_nfc = true;
+	if (data.length == 16 && gw_system_state == s_nfc_start) {
+		memcpy(nfc_uuid, data.value, 16);
+		uuid_from_nfc = true;
 
-	// 	gw_system_state = s_prov_conf_dev;
-	// 	k_sem_give(&sem_gw_system_state);
-	// }
+		gw_system_state = s_prov_conf_dev;
+		k_sem_give(&sem_gw_system_state);
+	}
 }
 
 struct gw_nfc_cb nfc_cb = { .rx = nfc_rx };
 
+void prov_conf_rx_callback(struct net_buf *get_buf)
+{
+	uint8_t opcode = net_buf_pull_u8(get_buf);
+
+	if (opcode == prov_link_active) {
+		prov_link_active = (bool)net_buf_pull_u8(get_buf);
+		k_sem_give(&sem_prov_link_active);
+	} else if (opcode == oc_unprov_dev_num) {
+		unprov_dev_num = net_buf_pull_u8(get_buf);
+		k_sem_give(&sem_get_unprov_dev_num);
+	} else if (opcode == oc_get_model_info) {
+		mod_inf.srv_count = net_buf_pull_le16(get_buf); // TODO: Is little endian correct?
+		mod_inf.cli_count = net_buf_pull_le16(get_buf);
+		k_sem_give(&sem_get_model_info);
+	}
+}
+
 void main(void)
 {
-
 	int err = 0;
+	uint8_t serial_message[20];
 
 	printk("MQTT bridge nrf9160 started\n");
+
+	display_shield_init();
+	
+	// display_set_cursor(0, 0);
+	// display_write_string("Connecting to");
+	// display_set_cursor(0, 1);
+	// display_write_string("server...");
+	
 	// modem_configure();
 
 	// err |= client_init(&client);
@@ -411,26 +612,144 @@ void main(void)
 	// 	return;
 	// }
 
-	// uart_simple_init(NULL);
+	uart_simple_init(NULL);
 	// uart_simple_channel_create(&mqtt_serial_chan);
+	uart_simple_channel_create(&prov_conf_serial_chan);
 
 	// mqtt_rx_thread_create();
 
-	display_shield_init();
+	gw_nfc_register_cb(&nfc_cb);
+	gw_nfc_init();
+
+	k_delayed_work_init(&button_work, button_work_handler);
+	k_delayed_work_submit(&button_work, K_NO_WAIT);
+
+	k_delayed_work_init(&unprov_devs_work, unprov_devs_work_handler);
 
 	display_set_cursor(0, 0);
 	display_write_string("BT Mesh Gateway");
 	display_set_cursor(0, 1);
 	display_write_string("Press SELECT");
 
-	printk("Written to display\n");
+	while (1) {
+		if (take_sem) {
+			k_sem_take(&sem_gw_system_state, K_FOREVER);
+		}
 
-	gw_nfc_register_cb(&nfc_cb);
-	gw_nfc_init();
+		take_sem = true;
 
-	
+		if (gw_system_state == s_idle) {
+			update_unprov_devs = false;
 
-	// while (1) {
+			display_clear();
+			display_set_cursor(4, 0);
+			display_write_string("unprov devs");
+			display_set_cursor(0, 1);
+			display_write_string("Press SELECT");
+			update_unprov_devs = true;
+			k_delayed_work_submit(&unprov_devs_work, K_NO_WAIT);
 
-	// }
+		} else if (gw_system_state == s_blink_dev) {
+			update_unprov_devs = false;
+
+			display_clear();
+			display_set_cursor(4, 0);
+			display_write_string("unprov devs");
+			display_set_cursor(0, 1);
+			display_write_string("Blinking dev ");
+			display_write_number(chosen_dev);
+
+			serial_message[0] = oc_blink_device;
+			serial_message[1] = chosen_dev;
+			uart_simple_send(&prov_conf_serial_chan, serial_message, 2);
+
+			update_unprov_devs = true;
+			k_delayed_work_submit(&unprov_devs_work, K_NO_WAIT);
+
+		} else if (gw_system_state == s_prov_conf_dev) {
+			k_delayed_work_cancel(&unprov_devs_work);
+			update_unprov_devs = false;
+
+			display_clear();
+			display_set_cursor(0, 0);
+			display_write_string("Provisioning...");
+
+			if (uuid_from_nfc) {
+				serial_message[0] = oc_provision_device;
+				serial_message[1] = 0xff;
+				memcpy(&serial_message[2], nfc_uuid, 16);
+				uart_simple_send(&prov_conf_serial_chan, serial_message, 18);
+				
+				gw_nfc_stop();
+				uuid_from_nfc = false;
+			} else {
+				serial_message[0] = oc_provision_device;
+				serial_message[1] = chosen_dev;
+				uart_simple_send(&prov_conf_serial_chan, serial_message, 2);
+			}
+
+			serial_message[0] = oc_get_model_info;
+			uart_simple_send(&prov_conf_serial_chan, serial_message, 1);
+			k_sem_take(&sem_get_model_info, K_FOREVER);
+
+			room_iterator = 0;
+
+			for (int i = 0; i < mod_inf.srv_count; i++) {
+				room_chosen = false;
+				display_clear();
+				display_set_cursor(0, 0);
+				display_write_string("Light ");
+				display_write_number(i);
+				while (!room_chosen)
+				{
+					display_set_cursor(0, 1);
+					display_write_string(rooms[room_iterator].name);
+					k_sem_take(&sem_choose_room, K_FOREVER);
+				}
+
+				serial_message[0] = oc_configure_server;
+				serial_message[1] = i;
+				serial_message[2] = rooms[room_iterator].group_addr >> 8;
+				serial_message[3] = rooms[room_iterator].group_addr & 0x00ff;
+				uart_simple_send(&prov_conf_serial_chan, serial_message, 4);
+			}
+			
+			for (int i = 0; i < mod_inf.cli_count; i++) {
+				room_chosen = false;
+				display_clear();
+				display_set_cursor(0, 0);
+				display_write_string("Light Switch ");
+				display_write_number(i);
+				while (!room_chosen)
+				{
+					display_set_cursor(0, 1);
+					display_write_string(rooms[room_iterator].name);
+					k_sem_take(&sem_choose_room, K_FOREVER);
+				}
+
+				serial_message[0] = oc_configure_client;
+				serial_message[1] = i;
+				serial_message[2] = rooms[room_iterator].group_addr >> 8;
+				serial_message[3] = rooms[room_iterator].group_addr & 0x00ff;
+				uart_simple_send(&prov_conf_serial_chan, serial_message, 4);
+			}
+
+			gw_system_state = s_idle;
+			take_sem = false;
+		} else if (gw_system_state == s_nfc_start) {
+			k_delayed_work_cancel(&unprov_devs_work);
+			update_unprov_devs = false;
+			
+			display_clear();
+			display_set_cursor(0, 0);
+			display_write_string("Scanning NFC...");
+			
+			gw_nfc_start();
+		} else if (gw_system_state == s_nfc_stop) {
+			gw_nfc_stop();
+
+			gw_system_state = s_idle;
+			take_sem = false;
+		}
+	}
 }

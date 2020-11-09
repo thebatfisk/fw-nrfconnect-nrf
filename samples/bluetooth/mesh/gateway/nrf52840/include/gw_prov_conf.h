@@ -29,16 +29,6 @@ struct unprov_devices {
 	struct unprov_device dev[MAX_UNPROV_DEVICES];
 };
 
-struct model_info {
-    uint8_t srv_count;
-    uint8_t cli_count;
-};
-
-struct room_info {
-	const char *name;
-	uint16_t group_addr;
-};
-
 void set_comp_data(const struct bt_mesh_comp comp_data);
 
 void bt_ready(int err);
