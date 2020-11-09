@@ -380,6 +380,20 @@ void mqtt_rx_callback(struct net_buf *get_buf)
 		mqtt_publish(&client, &param);
 }
 
+void nfc_rx(struct gw_nfc_rx_data data)
+{
+	printk("NFC RX CALLBACK\n");
+	// if (data.length == 16 && gw_system_state == s_nfc_start) {
+	// 	memcpy(nfc_uuid, data.value, 16);
+	// 	uuid_from_nfc = true;
+
+	// 	gw_system_state = s_prov_conf_dev;
+	// 	k_sem_give(&sem_gw_system_state);
+	// }
+}
+
+struct gw_nfc_cb nfc_cb = { .rx = nfc_rx };
+
 void main(void)
 {
 
@@ -410,6 +424,11 @@ void main(void)
 	display_write_string("Press SELECT");
 
 	printk("Written to display\n");
+
+	gw_nfc_register_cb(&nfc_cb);
+	gw_nfc_init();
+
+	
 
 	// while (1) {
 
