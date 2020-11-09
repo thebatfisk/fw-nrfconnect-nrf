@@ -10,5 +10,6 @@ project(mesh_light_switch)
 
 target_sources(app PRIVATE
 	src/main.c
-	src/model_handler.c)
+	src/model_handler.c
+	src/mesh_nfc.c)
 target_include_directories(app PRIVATE include)
