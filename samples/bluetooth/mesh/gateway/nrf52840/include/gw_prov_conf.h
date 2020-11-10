@@ -9,6 +9,7 @@
 
 #include <bluetooth/bluetooth.h>
 #include <bluetooth/mesh.h>
+#include "prov_conf_serial.h"
 
 #ifdef __cplusplus
 extern "C" {

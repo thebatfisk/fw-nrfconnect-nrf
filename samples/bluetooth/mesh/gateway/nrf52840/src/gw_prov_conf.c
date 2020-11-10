@@ -8,6 +8,7 @@
 #include <bluetooth/mesh.h>
 #include <settings/settings.h>
 #include "gw_prov_conf.h"
+#include "prov_conf_serial.h"
 
 static struct unprov_devices unprov_devs;
 

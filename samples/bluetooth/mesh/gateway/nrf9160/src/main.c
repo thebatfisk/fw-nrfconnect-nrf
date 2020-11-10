@@ -395,6 +395,7 @@ K_SEM_DEFINE(sem_gw_system_state, 0, 1);
 K_SEM_DEFINE(sem_choose_room, 0, 1);
 K_SEM_DEFINE(sem_prov_link_active, 0, 1);
 K_SEM_DEFINE(sem_get_unprov_dev_num, 0, 1);
+K_SEM_DEFINE(sem_device_added, 0, 1);
 K_SEM_DEFINE(sem_get_model_info, 0, 1);
 
 enum gw_system_states
@@ -460,7 +461,7 @@ static void button_work_handler(struct k_work *work)
 		} else if (gw_system_state == s_blink_dev) {
 			serial_opcode = oc_prov_link_active;
 			uart_simple_send(&prov_conf_serial_chan, &serial_opcode, 1);
-			k_sem_take(&sem_prov_link_active, K_FOREVER);
+			k_sem_take(&sem_prov_link_active, K_SECONDS(3));
 
 			if (!prov_link_active) {
 				if (chosen_dev > 0) {
@@ -484,12 +485,12 @@ static void button_work_handler(struct k_work *work)
 		} else if (gw_system_state == s_blink_dev) {
 			serial_opcode = oc_prov_link_active;
 			uart_simple_send(&prov_conf_serial_chan, &serial_opcode, 1);
-			k_sem_take(&sem_prov_link_active, K_FOREVER);
+			k_sem_take(&sem_prov_link_active, K_SECONDS(3));
 
 			if (!prov_link_active) {
 				serial_opcode = oc_unprov_dev_num;
 				uart_simple_send(&prov_conf_serial_chan, &serial_opcode, 1);
-				k_sem_take(&sem_get_unprov_dev_num, K_FOREVER);
+				k_sem_take(&sem_get_unprov_dev_num, K_SECONDS(3));
 
 				if (chosen_dev < unprov_dev_num - 1) {
 					chosen_dev++;
@@ -512,7 +513,7 @@ static void button_work_handler(struct k_work *work)
 		} else if (gw_system_state == s_idle) {
 			serial_opcode = oc_unprov_dev_num;
 			uart_simple_send(&prov_conf_serial_chan, &serial_opcode, 1);
-			k_sem_take(&sem_get_unprov_dev_num, K_FOREVER);
+			k_sem_take(&sem_get_unprov_dev_num, K_SECONDS(3));
 
 			if (unprov_dev_num > 0) {
 				gw_system_state = s_blink_dev;
@@ -521,7 +522,7 @@ static void button_work_handler(struct k_work *work)
 		} else if (gw_system_state == s_blink_dev) {
 			serial_opcode = oc_prov_link_active;
 			uart_simple_send(&prov_conf_serial_chan, &serial_opcode, 1);
-			k_sem_take(&sem_prov_link_active, K_FOREVER);
+			k_sem_take(&sem_prov_link_active, K_SECONDS(3));
 
 			if (!prov_link_active) {
 				gw_system_state = s_prov_conf_dev;
@@ -546,14 +547,14 @@ static void unprov_devs_work_handler(struct k_work *work)
 
 	serial_opcode = oc_unprov_dev_num;
 	uart_simple_send(&prov_conf_serial_chan, &serial_opcode, 1);
-	k_sem_take(&sem_get_unprov_dev_num, K_FOREVER);
+	k_sem_take(&sem_get_unprov_dev_num, K_SECONDS(3));
 
 	if (update_unprov_devs) {
 		display_set_cursor(0, 0);
 		display_write_number(unprov_dev_num);
 	}
 
-	k_delayed_work_submit(&unprov_devs_work, K_MSEC(100));
+	k_delayed_work_submit(&unprov_devs_work, K_MSEC(500));
 }
 
 void nfc_rx(struct gw_nfc_rx_data data)
@@ -574,14 +575,16 @@ void prov_conf_rx_callback(struct net_buf *get_buf)
 {
 	uint8_t opcode = net_buf_pull_u8(get_buf);
 
-	if (opcode == prov_link_active) {
+	if (opcode == oc_prov_link_active) {
 		prov_link_active = (bool)net_buf_pull_u8(get_buf);
 		k_sem_give(&sem_prov_link_active);
 	} else if (opcode == oc_unprov_dev_num) {
 		unprov_dev_num = net_buf_pull_u8(get_buf);
 		k_sem_give(&sem_get_unprov_dev_num);
+	} else if (opcode == oc_device_added) {
+		k_sem_give(&sem_device_added);
 	} else if (opcode == oc_get_model_info) {
-		mod_inf.srv_count = net_buf_pull_le16(get_buf); // TODO: Is little endian correct?
+		mod_inf.srv_count = net_buf_pull_le16(get_buf);
 		mod_inf.cli_count = net_buf_pull_le16(get_buf);
 		k_sem_give(&sem_get_model_info);
 	}
@@ -613,7 +616,7 @@ void main(void)
 	// }
 
 	uart_simple_init(NULL);
-	// uart_simple_channel_create(&mqtt_serial_chan);
+	uart_simple_channel_create(&mqtt_serial_chan);
 	uart_simple_channel_create(&prov_conf_serial_chan);
 
 	// mqtt_rx_thread_create();
@@ -688,9 +691,13 @@ void main(void)
 				uart_simple_send(&prov_conf_serial_chan, serial_message, 2);
 			}
 
+			k_sem_take(&sem_device_added, K_SECONDS(10));
+
 			serial_message[0] = oc_get_model_info;
 			uart_simple_send(&prov_conf_serial_chan, serial_message, 1);
-			k_sem_take(&sem_get_model_info, K_FOREVER);
+			k_sem_take(&sem_get_model_info, K_SECONDS(10));
+
+			printk("Server count: %d - Client count: %d\n", mod_inf.srv_count, mod_inf.cli_count);
 
 			room_iterator = 0;
 

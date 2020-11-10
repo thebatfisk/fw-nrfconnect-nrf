@@ -10,6 +10,7 @@
 #include <stdlib.h>
 #include "uart_simple.h"
 #include "mqtt_serial.h"
+#include "prov_conf_serial.h"
 #include "gw_prov_conf.h"
 
 #include <bluetooth/bluetooth.h>
@@ -30,6 +31,7 @@
 #define HASS_DISCOVERY_REQUEST 0
 
 void mqtt_rx_callback(struct net_buf *get_buf);
+void prov_conf_rx_callback(struct net_buf *get_buf);
 
 struct light_struct {
 	bool on_off;
@@ -39,6 +41,11 @@ struct light_struct {
 static struct uart_channel_ctx mqtt_serial_chan = {
 	.channel_id = 1,
 	.rx_cb = mqtt_rx_callback,
+};
+
+static struct uart_channel_ctx prov_conf_serial_chan = {
+	.channel_id = 2,
+	.rx_cb = prov_conf_rx_callback,
 };
 
 static int json_add_str(cJSON *parent, const char *str, const char *item)
@@ -453,6 +460,64 @@ void mqtt_rx_callback(struct net_buf *get_buf)
 			 param.message.payload.len);
 }
 
+void prov_conf_rx_callback(struct net_buf *get_buf)
+{
+	NET_BUF_SIMPLE_DEFINE(serial_net_buf, 20);
+	uint8_t serial_message[20];
+	uint8_t opcode = net_buf_pull_u8(get_buf);
+	static struct model_info mod_inf;
+
+	printk("Serial opcode: %d\n", opcode);
+
+	if (opcode == oc_prov_link_active) {
+		serial_message[0] = oc_prov_link_active;
+		serial_message[1] = (uint8_t)prov_link_active();
+		uart_simple_send(&prov_conf_serial_chan, serial_message, 2);
+	} else if (opcode == oc_unprov_dev_num) {
+		serial_message[0] = oc_unprov_dev_num;
+		serial_message[1] = get_unprov_dev_num();
+		uart_simple_send(&prov_conf_serial_chan, serial_message, 2);
+	} else if (opcode == oc_get_model_info) {
+		mod_inf.srv_count = 0;
+		mod_inf.cli_count = 0;
+		get_model_info(&mod_inf);
+
+		printk("Server count: %d - Client cout: %d\n", mod_inf.srv_count, mod_inf.cli_count);
+
+		net_buf_simple_reset(&serial_net_buf);
+		net_buf_simple_add_u8(&serial_net_buf, oc_get_model_info);
+		net_buf_simple_add_le16(&serial_net_buf, mod_inf.srv_count);
+		net_buf_simple_add_le16(&serial_net_buf, mod_inf.cli_count);
+		uart_simple_send(&prov_conf_serial_chan, serial_net_buf.data, serial_net_buf.len);
+	} else if (opcode == oc_blink_device) {
+		uint8_t device = net_buf_pull_u8(get_buf);
+		blink_device(device);
+	} else if (opcode == oc_provision_device) {
+		uint8_t dev_num = net_buf_pull_u8(get_buf);
+
+		if (dev_num == 0xff) {
+			uint8_t uuid[16];
+			memcpy(uuid, get_buf->data, 16);
+			provision_device(dev_num, uuid);
+		} else {
+			provision_device(dev_num, NULL);
+		}
+
+		serial_message[0] = oc_device_added;
+		uart_simple_send(&prov_conf_serial_chan, serial_message, 1);
+	} else if (opcode == oc_configure_server) {
+		uint8_t elem_num = net_buf_pull_u8(get_buf);
+		uint16_t group_addr = net_buf_pull_be16(get_buf);
+		printk("Server group address: 0x%04x\n", group_addr);
+		configure_server(elem_num, group_addr);
+	} else if (opcode == oc_configure_client) {
+		uint8_t elem_num = net_buf_pull_u8(get_buf);
+		uint16_t group_addr = net_buf_pull_be16(get_buf);
+		printk("Client group address: 0x%04x\n", group_addr);
+		configure_client(elem_num, group_addr);	
+	}
+}
+
 void main(void)
 {
 	int err;
@@ -462,6 +527,7 @@ void main(void)
 	cJSON_Init();
 	uart_simple_init(NULL);
 	uart_simple_channel_create(&mqtt_serial_chan);
+	uart_simple_channel_create(&prov_conf_serial_chan);
 
 	set_comp_data(comp);
 
