@@ -599,27 +599,27 @@ void main(void)
 
 	display_shield_init();
 	
-	// display_set_cursor(0, 0);
-	// display_write_string("Connecting to");
-	// display_set_cursor(0, 1);
-	// display_write_string("server...");
+	display_set_cursor(0, 0);
+	display_write_string("Connecting to");
+	display_set_cursor(0, 1);
+	display_write_string("server...");
 	
-	// modem_configure();
+	modem_configure();
 
-	// err |= client_init(&client);
-	// err |= mqtt_connect(&client);
-	// err |= fds_init(&client);
+	err |= client_init(&client);
+	err |= mqtt_connect(&client);
+	err |= fds_init(&client);
 
-	// if (err != 0) {
-	// 	printk("MQTT initialization failed\n");
-	// 	return;
-	// }
+	if (err != 0) {
+		printk("MQTT initialization failed\n");
+		return;
+	}
 
 	uart_simple_init(NULL);
 	uart_simple_channel_create(&mqtt_serial_chan);
 	uart_simple_channel_create(&prov_conf_serial_chan);
 
-	// mqtt_rx_thread_create();
+	mqtt_rx_thread_create();
 
 	gw_nfc_register_cb(&nfc_cb);
 	gw_nfc_init();
