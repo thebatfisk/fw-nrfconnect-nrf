@@ -19,7 +19,7 @@
 #endif
 #include "uart_simple.h"
 #include "mqtt_serial.h"
-#include "prov_conf_serial.h"
+#include "prov_conf_common.h"
 #include "gw_nfc.h"
 #include "gw_display_shield.h"
 
@@ -389,8 +389,6 @@ void mqtt_rx_callback(struct net_buf *get_buf)
 
 // **************** Erik code below (until main) *****************
 
-#define BASE_GROUP_ADDR 0xc000
-
 K_SEM_DEFINE(sem_gw_system_state, 0, 1);
 K_SEM_DEFINE(sem_choose_room, 0, 1);
 K_SEM_DEFINE(sem_prov_link_active, 0, 1);
@@ -408,18 +406,12 @@ enum gw_system_states
 	s_nfc_stop,
 };
 
-struct room_info {
-	const char *name;
-	uint16_t group_addr;
-};
-
-// TODO: Unique node names
 const struct room_info rooms[] = {
-	[0] = { .name = "Living room    ", .group_addr = BASE_GROUP_ADDR },
-	[1] = { .name = "Kitchen        ", .group_addr = BASE_GROUP_ADDR + 1 },
-	[2] = { .name = "Bedroom        ", .group_addr = BASE_GROUP_ADDR + 2 },
-	[3] = { .name = "Bathroom       ", .group_addr = BASE_GROUP_ADDR + 3 },
-	[4] = { .name = "Hallway        ", .group_addr = BASE_GROUP_ADDR + 4 }
+	[0] = { .name = "Living room   ", .group_addr = BASE_GROUP_ADDR },
+	[1] = { .name = "Kitchen       ", .group_addr = BASE_GROUP_ADDR + 1 },
+	[2] = { .name = "Bedroom       ", .group_addr = BASE_GROUP_ADDR + 2 },
+	[3] = { .name = "Bathroom      ", .group_addr = BASE_GROUP_ADDR + 3 },
+	[4] = { .name = "Hallway       ", .group_addr = BASE_GROUP_ADDR + 4 }
 };
 
 static int gw_system_state = s_start;
@@ -559,7 +551,6 @@ static void unprov_devs_work_handler(struct k_work *work)
 
 void nfc_rx(struct gw_nfc_rx_data data)
 {
-	printk("NFC RX CALLBACK\n");
 	if (data.length == 16 && gw_system_state == s_nfc_start) {
 		memcpy(nfc_uuid, data.value, 16);
 		uuid_from_nfc = true;
@@ -648,7 +639,7 @@ void main(void)
 			display_set_cursor(4, 0);
 			display_write_string("unprov devs");
 			display_set_cursor(0, 1);
-			display_write_string("Press SELECT");
+			display_write_string("<- NFC or SELECT");
 			update_unprov_devs = true;
 			k_delayed_work_submit(&unprov_devs_work, K_NO_WAIT);
 
@@ -750,6 +741,8 @@ void main(void)
 			display_clear();
 			display_set_cursor(0, 0);
 			display_write_string("Scanning NFC...");
+			display_set_cursor(0, 1);
+			display_write_string("-> for NFC off");
 			
 			gw_nfc_start();
 		} else if (gw_system_state == s_nfc_stop) {

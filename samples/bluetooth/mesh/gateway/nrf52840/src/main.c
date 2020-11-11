@@ -10,7 +10,7 @@
 #include <stdlib.h>
 #include "uart_simple.h"
 #include "mqtt_serial.h"
-#include "prov_conf_serial.h"
+#include "prov_conf_common.h"
 #include "gw_prov_conf.h"
 
 #include <bluetooth/bluetooth.h>
@@ -32,6 +32,14 @@
 
 void mqtt_rx_callback(struct net_buf *get_buf);
 void prov_conf_rx_callback(struct net_buf *get_buf);
+
+struct room_info rooms[] = {
+	[0] = { .name = "Living room", .group_addr = BASE_GROUP_ADDR },
+	[1] = { .name = "Kitchen", .group_addr = BASE_GROUP_ADDR + 1 },
+	[2] = { .name = "Bedroom", .group_addr = BASE_GROUP_ADDR + 2 },
+	[3] = { .name = "Bathroom", .group_addr = BASE_GROUP_ADDR + 3 },
+	[4] = { .name = "Hallway", .group_addr = BASE_GROUP_ADDR + 4 }
+};
 
 struct light_struct {
 	bool on_off;
@@ -371,6 +379,36 @@ static const struct bt_mesh_comp comp = {
 	.elem_count = ARRAY_SIZE(elements),
 };
 
+static void add_element_to_hass(uint16_t model_id, uint16_t addr, uint16_t group_addr, uint16_t room_num, const char *name)
+{
+	char merge_string[15];
+	char name_string[30];
+
+	strcpy(name_string, name);
+
+	if (model_id == BT_MESH_MODEL_ID_GEN_ONOFF_SRV) {
+		if (!rooms[room_num].light_group_added_to_hass) {
+			discovery_light_create(BT_MESH_MODEL_ID_GEN_ONOFF_SRV, group_addr, name);
+			rooms[room_num].light_group_added_to_hass = true;
+		}
+
+		sprintf(merge_string, " light %d", rooms[room_num].light_count);
+		rooms[room_num].light_count++;
+		strcat(name_string, merge_string);
+		discovery_light_create(BT_MESH_MODEL_ID_GEN_ONOFF_SRV, addr, name_string);
+	} else if (model_id == BT_MESH_MODEL_ID_GEN_ONOFF_CLI) {
+		if (!rooms[room_num].switch_group_added_to_hass) {
+			discovery_binary_sensor_create(BT_MESH_MODEL_ID_GEN_ONOFF_CLI, group_addr, name);
+			rooms[room_num].switch_group_added_to_hass = true;
+		}
+
+		sprintf(merge_string, " switch %d", rooms[room_num].switch_count);
+		rooms[room_num].switch_count++;
+		strcat(name_string, merge_string);
+		discovery_binary_sensor_create(BT_MESH_MODEL_ID_GEN_ONOFF_CLI, addr, name_string);
+	}
+}
+
 void mqtt_msg_handler(uint16_t model_id, uint16_t addr, uint8_t *data,
 		      uint16_t data_len)
 {
@@ -466,6 +504,7 @@ void prov_conf_rx_callback(struct net_buf *get_buf)
 	uint8_t serial_message[20];
 	uint8_t opcode = net_buf_pull_u8(get_buf);
 	static struct model_info mod_inf;
+	int err;
 
 	printk("Serial opcode: %d\n", opcode);
 
@@ -509,12 +548,34 @@ void prov_conf_rx_callback(struct net_buf *get_buf)
 		uint8_t elem_num = net_buf_pull_u8(get_buf);
 		uint16_t group_addr = net_buf_pull_be16(get_buf);
 		printk("Server group address: 0x%04x\n", group_addr);
-		configure_server(elem_num, group_addr);
+		err = configure_server(elem_num, group_addr);
+
+		if (err) {
+			printk("Error configuring server\n");
+		} else {
+			for (int i = 0; i < 5; i++) {
+				if (rooms[i].group_addr == group_addr) {
+					add_element_to_hass(BT_MESH_MODEL_ID_GEN_ONOFF_SRV, (get_added_node_addr() + elem_num), group_addr, i, rooms[i].name);
+					break;
+				}
+			}
+		}
 	} else if (opcode == oc_configure_client) {
 		uint8_t elem_num = net_buf_pull_u8(get_buf);
 		uint16_t group_addr = net_buf_pull_be16(get_buf);
 		printk("Client group address: 0x%04x\n", group_addr);
-		configure_client(elem_num, group_addr);	
+		err = configure_client(elem_num, group_addr);
+
+		if (err) {
+			printk("Error configuring client\n");
+		} else {
+			for (int i = 0; i < 5; i++) {
+				if (rooms[i].group_addr == group_addr) {
+					add_element_to_hass(BT_MESH_MODEL_ID_GEN_ONOFF_CLI, (get_added_node_addr() + elem_num), group_addr, i, rooms[i].name);
+					break;
+				}
+			}
+		}
 	}
 }
 

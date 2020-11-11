@@ -9,13 +9,17 @@
 
 #include <bluetooth/bluetooth.h>
 #include <bluetooth/mesh.h>
-#include "prov_conf_serial.h"
+#include "prov_conf_common.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
+#ifndef BT_MESH_PROV_CONF_BGR
+#define BT_MESH_PROV_CONF_BGR
 #define BASE_GROUP_ADDR 0xc000
+#endif /* BT_MESH_PROV_CONF_BGR */
+
 #define MAX_UNPROV_DEVICES 30
 #define UNPROV_BEAC_TIMEOUT 30
 
@@ -47,6 +51,8 @@ void blink_device(uint8_t dev_num);
 uint8_t get_unprov_dev_num(void);
 
 bool prov_link_active(void);
+
+uint16_t get_added_node_addr(void);
 
 #ifdef __cplusplus
 }

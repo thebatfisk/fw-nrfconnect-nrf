@@ -300,10 +300,16 @@ static void t2t_data_read_complete(uint8_t *data)
 		}
 	}
 
-	err = st25r3911b_nfca_tag_sleep();
-	if (err) {
-		printk("Tag sleep error %d\n", err);
-	}
+	// err = st25r3911b_nfca_tag_sleep();
+	// if (err) {
+	// 	printk("Tag sleep error %d\n", err);
+	// }
+
+	// err = st25r3911b_nfca_field_off();
+	// if (err) {
+	// 	printk("Field off error %d\n", err);
+	// 	return err;
+	// }
 
 	gw_cb->rx(gw_rx_data);
 

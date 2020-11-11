@@ -1137,9 +1137,11 @@ int st25r3911b_nfca_init(struct k_poll_event *events, uint8_t cnt,
 
 int st25r3911b_nfca_field_on(void)
 {
-	if (!atomic_cas(&nfca.state.tag, STATE_IDLE, STATE_FIELD_ON)) {
-		return -EPERM;
-	}
+	// if (!atomic_cas(&nfca.state.tag, STATE_IDLE, STATE_FIELD_ON)) {
+	// 	return -EPERM;
+	// }
+
+	state_set(STATE_FIELD_ON);
 
 	k_sem_give(&user_sem);
 

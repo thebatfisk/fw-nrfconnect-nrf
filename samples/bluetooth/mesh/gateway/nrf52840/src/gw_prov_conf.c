@@ -8,7 +8,7 @@
 #include <bluetooth/mesh.h>
 #include <settings/settings.h>
 #include "gw_prov_conf.h"
-#include "prov_conf_serial.h"
+#include "prov_conf_common.h"
 
 static struct unprov_devices unprov_devs;
 
@@ -510,4 +510,9 @@ uint8_t get_unprov_dev_num(void)
 bool prov_link_active(void)
 {
 	return bt_mesh_prov_link_active();
+}
+
+uint16_t get_added_node_addr(void) 
+{
+	return added_node_addr;
 }
