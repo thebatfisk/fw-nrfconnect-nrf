@@ -596,4 +596,8 @@ void main(void)
 	if (err) {
 		printk("Bluetooth init failed (err %d)\n", err);
 	}
+	discovery_light_create(1, 2, "anders");
+	discovery_light_create(1, 2, "anders");
+	discovery_light_create(1, 2, "anders");
+	discovery_light_create(1, 2, "anders");
 }

@@ -24,6 +24,8 @@
 #define UART_RX_POOL_SIZE 2048
 #define UART_RX_POOL_MAX_ENTRIES 16
 
+K_MUTEX_DEFINE(uart_send_mtx);
+
 /* Uart device */
 static struct device *uart_dev;
 static rx_cb rx_callback;
@@ -64,6 +66,7 @@ static void uart_isr(struct device *unused, void *user_data)
 		uint8_t byte;
 
 		uart_fifo_read(uart_dev, &byte, sizeof(byte));
+		// printk("Byte recieved on uart: %d\n", byte);
 		int ret_code = slip_decode_add_byte(&slip, byte);
 
 		switch (ret_code) {
@@ -114,6 +117,8 @@ static void uart_irq_init(void)
 void uart_simple_send(struct uart_channel_ctx *channel_ctx, uint8_t *data,
 		      uint16_t len)
 {
+	k_mutex_lock(&uart_send_mtx, K_FOREVER);
+	printk("Ctx %d ENTER\n", channel_ctx->channel_id);
 	uint8_t buf[len + CHECKSUM_SIZE + CHANNEL_ID_SIZE];
 	uint8_t buf_idx = 0;
 
@@ -138,6 +143,19 @@ void uart_simple_send(struct uart_channel_ctx *channel_ctx, uint8_t *data,
 	for (int i = 0; i < slip_buf_len; i++) {
 		uart_poll_out(uart_dev, slip_buf[i]);
 	}
+	printk("Ctx %d ENDS\n", channel_ctx->channel_id);
+	k_mutex_unlock(&uart_send_mtx);
+}
+
+static void uart_channel_clear(void)
+{
+	struct uart_channel_ctx dummy_ctx = {
+		.channel_id = 0,
+		.rx_cb = NULL,
+	};
+	uint8_t dummy_array[] = "FF";
+
+	uart_simple_send(&dummy_ctx, dummy_array, sizeof(dummy_array));
 }
 
 void uart_simple_channel_create(struct uart_channel_ctx *channel_ctx)
@@ -203,4 +221,5 @@ void uart_simple_init(rx_cb default_cb)
 
 	uart_irq_init();
 	rx_thread_create();
+	uart_channel_clear();
 }

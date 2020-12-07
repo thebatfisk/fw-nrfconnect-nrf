@@ -1,8 +1,3 @@
-/*
- * Copyright (c) 2020 Nordic Semiconductor ASA
- *
- * SPDX-License-Identifier: LicenseRef-BSD-5-Clause-Nordic
- */
 
 #include <zephyr.h>
 #include <stdio.h>
@@ -23,60 +18,67 @@
 #include "gw_nfc.h"
 #include "gw_display_shield.h"
 
+#include "certificates.h"
+
+/** Forward declarations */
 void mqtt_rx_callback(struct net_buf *get_buf);
 void prov_conf_rx_callback(struct net_buf *get_buf);
 
-static struct uart_channel_ctx mqtt_serial_chan = {
-	.channel_id = 1,
-	.rx_cb = mqtt_rx_callback,
-};
 
+/** Provisioning and configuration serial channel */
 static struct uart_channel_ctx prov_conf_serial_chan = {
 	.channel_id = 2,
 	.rx_cb = prov_conf_rx_callback,
 };
-
-/* Test thread */
+/** MQTT serial channel */
+static struct uart_channel_ctx mqtt_serial_chan = {
+	.channel_id = 1,
+	.rx_cb = mqtt_rx_callback,
+};
+/** MQTT RX thread stack */
 static K_THREAD_STACK_DEFINE(mqtt_rx_thread_stack, 1536);
-static struct k_thread mqtt_rx_thread_data;
-
-
-/* Buffers for MQTT client. */
+/** MQTT RX thread context*/
+static struct k_thread mqtt_rx_thread_ctx;
+/** MQTT RX buffer */
 static uint8_t rx_buffer[CONFIG_MQTT_MESSAGE_BUFFER_SIZE];
+/** MQTT TX buffer */
 static uint8_t tx_buffer[CONFIG_MQTT_MESSAGE_BUFFER_SIZE];
+/** MQTT client context */
 static uint8_t payload_buf[CONFIG_MQTT_PAYLOAD_BUFFER_SIZE];
-
+/** MQTT client context */
+static struct mqtt_client client;
+/** MQTT broker context */
+static struct sockaddr_storage broker;
+/** MQTT file descriptor */
+static struct pollfd fds;
+/** MQTT broker user */
+struct mqtt_utf8 user = {
+    .utf8 = CONFIG_MQTT_USER,
+    .size = sizeof(CONFIG_MQTT_USER) - 1,
+};
+/** MQTT broker password */
 struct mqtt_utf8 password = {
     .utf8 = CONFIG_MQTT_PW,
     .size = sizeof(CONFIG_MQTT_PW) - 1,
 };
 
-struct mqtt_utf8 user = {
-    .utf8 = CONFIG_MQTT_USER,
-    .size = sizeof(CONFIG_MQTT_USER) - 1,
-};
-
-/* The mqtt client struct */
-static struct mqtt_client client;
-
-/* MQTT Broker details. */
-static struct sockaddr_storage broker;
-
-/* File descriptor */
-static struct pollfd fds;
-
-/**@brief Function to print strings without null-termination
- */
-static void data_print(uint8_t *prefix, uint8_t *data, size_t len)
+static int certificates_provision(void)
 {
-	char buf[len + 1];
+	int err = modem_key_mgmt_write(CONFIG_MQTT_TLS_SEC_TAG,
+				   MODEM_KEY_MGMT_CRED_TYPE_CA_CHAIN,
+				   CA_CERTIFICATE,
+				   strlen(CA_CERTIFICATE));
 
-	memcpy(buf, data, len);
-	buf[len] = 0;
-	printk("%s%s\n", prefix, buf);
+	if (err) {
+		printk("Failed to provision certificate, Err: %d\n", err);
+	} else {
+		printk("Sucessfully Provisioned the certificate\n");
+	}
+
+	return err;
 }
 
-static int serial_publish(const struct mqtt_publish_param *param, uint8_t *data, size_t len)
+static int mqtt_serial_publish(const struct mqtt_publish_param *param, uint8_t *data, size_t len)
 {
 	struct mqtt_publish_param out_param;
 
@@ -100,8 +102,6 @@ static int serial_publish(const struct mqtt_publish_param *param, uint8_t *data,
 	return 0;
 }
 
-/**@brief Function to read the published payload.
- */
 static int publish_get_payload(struct mqtt_client *c, size_t length)
 {
 	uint8_t *buf = payload_buf;
@@ -121,7 +121,7 @@ static int publish_get_payload(struct mqtt_client *c, size_t length)
 				return ret;
 			}
 
-			printk("mqtt_read_publish_payload: EAGAIN\n");
+			printk("Failed to read MQTT payload, Err: %d\n", ret);
 
 			err = poll(&fds, 1,
 				   CONFIG_MQTT_KEEPALIVE * MSEC_PER_SEC);
@@ -142,8 +142,6 @@ static int publish_get_payload(struct mqtt_client *c, size_t length)
 	return 0;
 }
 
-/**@brief MQTT client event handler
- */
 void mqtt_evt_handler(struct mqtt_client *const c, const struct mqtt_evt *evt)
 {
 	int err;
@@ -159,7 +157,6 @@ void mqtt_evt_handler(struct mqtt_client *const c, const struct mqtt_evt *evt)
 						   CONFIG_MQTT_SUB_TOPIC) },
 				.qos = MQTT_QOS_1_AT_LEAST_ONCE
 			};
-
 			const struct mqtt_subscription_list subscription_list = {
 				.list = &subscribe_topic,
 				.list_count = 1,
@@ -175,23 +172,17 @@ void mqtt_evt_handler(struct mqtt_client *const c, const struct mqtt_evt *evt)
 	case MQTT_EVT_PUBLISH: {
 		const struct mqtt_publish_param *p = &evt->param.publish;
 
-		printk("[%s:%d] MQTT PUBLISH result=%d len=%d\n", __func__,
-		       __LINE__, evt->result, p->message.payload.len);
 		err = publish_get_payload(c, p->message.payload.len);
 		if (err >= 0) {
-			data_print("Received: ", payload_buf,
-				p->message.payload.len);
-
-			/* Send data over Uart */
-			serial_publish(p, payload_buf, p->message.payload.len);
-
+			mqtt_serial_publish(p, payload_buf, p->message.payload.len);
 		} else {
-			printk("mqtt_read_publish_payload: Failed! %d\n", err);
-			printk("Disconnecting MQTT client...\n");
+			printk("Failed to retrive on-air MQTT paiload, Err: %d\n", err);
 
 			err = mqtt_disconnect(c);
 			if (err) {
-				printk("Could not disconnect: %d\n", err);
+				printk("Could not disconnect, Err %d\n", err);
+			} else {
+				printk("Disconnected from the MQTT client\n");
 			}
 		}
 		break;
@@ -203,15 +194,12 @@ void mqtt_evt_handler(struct mqtt_client *const c, const struct mqtt_evt *evt)
 	case MQTT_EVT_PINGRESP:
 	default:
 		if (evt->result != 0) {
-			printk("SOMETHING WENT WRONG\n");
+			printk("A failure occored during MQTT event handling\n");
 		}
 		break;
 	}
 }
 
-/**@brief Resolves the configured hostname and
- * initializes the MQTT broker structure
- */
 static int broker_init(void)
 {
 	int err;
@@ -224,7 +212,7 @@ static int broker_init(void)
 
 	err = getaddrinfo(CONFIG_MQTT_BROKER_HOSTNAME, NULL, &hints, &result);
 	if (err) {
-		printk("ERROR: getaddrinfo failed %d\n", err);
+		printk("Failed to get the address info, Err: %d\n", err);
 		return -ECHILD;
 	}
 
@@ -264,8 +252,6 @@ static int broker_init(void)
 	return err;
 }
 
-/**@brief Initialize the MQTT client structure
- */
 static int client_init(struct mqtt_client *client)
 {
 	int err;
@@ -294,33 +280,33 @@ static int client_init(struct mqtt_client *client)
 	client->tx_buf_size = sizeof(tx_buffer);
 
 	/* MQTT transport configuration */
-	client->transport.type = MQTT_TRANSPORT_NON_SECURE;
+	struct mqtt_sec_config *tls_cfg = &(client->transport).tls.config;
+	static sec_tag_t sec_tag_list[] = { CONFIG_MQTT_TLS_SEC_TAG };
+
+	client->transport.type = MQTT_TRANSPORT_SECURE;
+	tls_cfg->peer_verify = CONFIG_MQTT_TLS_PEER_VERIFY;
+	tls_cfg->cipher_count = 0;
+	tls_cfg->cipher_list = NULL;
+	tls_cfg->sec_tag_count = ARRAY_SIZE(sec_tag_list);
+	tls_cfg->sec_tag_list = sec_tag_list;
+	tls_cfg->hostname = CONFIG_MQTT_BROKER_HOSTNAME;
+	tls_cfg->session_cache = IS_ENABLED(CONFIG_MQTT_TLS_SESSION_CACHING) ?
+					 TLS_SESSION_CACHE_ENABLED :
+					 TLS_SESSION_CACHE_DISABLED;
 
 	return err;
 }
 
-/**@brief Initialize the file descriptor structure used by poll.
- */
-static int fds_init(struct mqtt_client *c)
+static void fds_init(struct mqtt_client *c)
 {
-	if (c->transport.type == MQTT_TRANSPORT_NON_SECURE) {
-		fds.fd = c->transport.tcp.sock;
-	} else {
-		return -ENOTSUP;
-	}
-
+	fds.fd = c->transport.tls.sock;
 	fds.events = POLLIN;
-	return 0;
 }
 
-/**@brief Configures modem to provide LTE link. Blocks until link is
- * successfully established.
- */
 static void modem_configure(void)
 {
 	int err;
 
-	printk("LTE Link Connecting ...\n");
 	err = lte_lc_init_and_connect();
 	__ASSERT(err == 0, "LTE link could not be established.");
 	printk("LTE Link Connected!\n");
@@ -372,15 +358,14 @@ static void mqtt_rx_thread(void *p1, void *p2, void *p3)
 
 static void mqtt_rx_thread_create(void)
 {
-	k_thread_create(&mqtt_rx_thread_data, mqtt_rx_thread_stack,
+	k_thread_create(&mqtt_rx_thread_ctx, mqtt_rx_thread_stack,
 			K_THREAD_STACK_SIZEOF(mqtt_rx_thread_stack), mqtt_rx_thread,
 			NULL, NULL, NULL, K_PRIO_COOP(6), 0, K_NO_WAIT);
-	k_thread_name_set(&mqtt_rx_thread_data, "MQTT Rx");
+	k_thread_name_set(&mqtt_rx_thread_ctx, "MQTT Rx");
 }
 
 void mqtt_rx_callback(struct net_buf *get_buf)
 {
-
 		struct mqtt_publish_param param;
 
 		mqtt_serial_msg_decode(get_buf, &param);
@@ -589,17 +574,17 @@ void main(void)
 	printk("MQTT bridge nrf9160 started\n");
 
 	display_shield_init();
-	
 	display_set_cursor(0, 0);
 	display_write_string("Connecting to");
 	display_set_cursor(0, 1);
 	display_write_string("server...");
-	
+
+	certificates_provision();
 	modem_configure();
 
 	err |= client_init(&client);
 	err |= mqtt_connect(&client);
-	err |= fds_init(&client);
+	fds_init(&client);
 
 	if (err != 0) {
 		printk("MQTT initialization failed\n");
@@ -673,7 +658,7 @@ void main(void)
 				serial_message[1] = 0xff;
 				memcpy(&serial_message[2], nfc_uuid, 16);
 				uart_simple_send(&prov_conf_serial_chan, serial_message, 18);
-				
+
 				gw_nfc_stop();
 				uuid_from_nfc = false;
 			} else {
@@ -711,7 +696,7 @@ void main(void)
 				serial_message[3] = rooms[room_iterator].group_addr & 0x00ff;
 				uart_simple_send(&prov_conf_serial_chan, serial_message, 4);
 			}
-			
+
 			for (int i = 0; i < mod_inf.cli_count; i++) {
 				room_chosen = false;
 				display_clear();
@@ -737,13 +722,13 @@ void main(void)
 		} else if (gw_system_state == s_nfc_start) {
 			k_delayed_work_cancel(&unprov_devs_work);
 			update_unprov_devs = false;
-			
+
 			display_clear();
 			display_set_cursor(0, 0);
 			display_write_string("Scanning NFC...");
 			display_set_cursor(0, 1);
 			display_write_string("-> for NFC off");
-			
+
 			gw_nfc_start();
 		} else if (gw_system_state == s_nfc_stop) {
 			gw_nfc_stop();

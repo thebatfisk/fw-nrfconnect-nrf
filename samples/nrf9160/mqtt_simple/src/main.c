@@ -21,6 +21,18 @@
 
 #include "certificates.h"
 
+struct mqtt_utf8 password = {
+    .utf8 = "anders",
+    .size = sizeof("anders") - 1,
+};
+
+struct mqtt_utf8 user = {
+    .utf8 = "user1",
+    .size = sizeof("user1") - 1,
+};
+
+// LOG_MODULE_REGISTER(mqtt_simple, CONFIG_MQTT_SIMPLE_LOG_LEVEL);
+
 /* Buffers for MQTT client. */
 static uint8_t rx_buffer[CONFIG_MQTT_MESSAGE_BUFFER_SIZE];
 static uint8_t tx_buffer[CONFIG_MQTT_MESSAGE_BUFFER_SIZE];
@@ -369,9 +381,11 @@ static int client_init(struct mqtt_client *client)
 	client->evt_cb = mqtt_evt_handler;
 	client->client_id.utf8 = (uint8_t *)CONFIG_MQTT_CLIENT_ID;
 	client->client_id.size = strlen(CONFIG_MQTT_CLIENT_ID);
-	client->password = NULL;
-	client->user_name = NULL;
+	// client->password = NULL;
+	// client->user_name = NULL;
 	client->protocol_version = MQTT_VERSION_3_1_1;
+	client->password = &password;
+	client->user_name = &user;
 
 	/* MQTT buffers configuration */
 	client->rx_buf = rx_buffer;
