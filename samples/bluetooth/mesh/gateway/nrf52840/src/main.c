@@ -1,9 +1,3 @@
-/*
- * Copyright (c) 2020 Nordic Semiconductor ASA
- *
- * SPDX-License-Identifier: LicenseRef-BSD-5-Clause-Nordic
- */
-
 #include <zephyr.h>
 #include <stdio.h>
 #include <string.h>
@@ -34,7 +28,7 @@ void mqtt_rx_callback(struct net_buf *get_buf);
 void prov_conf_rx_callback(struct net_buf *get_buf);
 
 struct room_info rooms[] = {
-	[0] = { .name = "Living room", .group_addr = BASE_GROUP_ADDR },
+	[0] = { .name = "Living_Room", .group_addr = BASE_GROUP_ADDR },
 	[1] = { .name = "Kitchen", .group_addr = BASE_GROUP_ADDR + 1 },
 	[2] = { .name = "Bedroom", .group_addr = BASE_GROUP_ADDR + 2 },
 	[3] = { .name = "Bathroom", .group_addr = BASE_GROUP_ADDR + 3 },
@@ -100,7 +94,7 @@ static void mqtt_serial_send(uint8_t *topic, uint16_t topic_len, uint8_t *data,
 		.message.payload.data = data,
 		.message.payload.len = data_len,
 		.message.topic.qos = 0,
-		.message_id = sys_rand32_get(),
+		.message_id = k_uptime_get(),
 		.dup_flag = 0,
 		.retain_flag = 0,
 	};
@@ -233,8 +227,8 @@ static void gen_onoff_cli_status_cb(struct bt_mesh_onoff_cli *cli,
 		printk("No memory to print JSON output\n");
 		return;
 	}
-
-	mqtt_state_reply_send(BT_MESH_MODEL_ID_GEN_LEVEL_SRV, ctx->addr,
+	printk("recv_dst: %x\n", ctx->recv_dst);
+	mqtt_state_reply_send(BT_MESH_MODEL_ID_GEN_ONOFF_SRV, ctx->addr,
 			      json_packed, strlen(json_packed));
 	cJSON_Delete(json_struct);
 	cJSON_FreeString(json_packed);
@@ -392,7 +386,7 @@ static void add_element_to_hass(uint16_t model_id, uint16_t addr, uint16_t group
 			rooms[room_num].light_group_added_to_hass = true;
 		}
 
-		sprintf(merge_string, " light %d", rooms[room_num].light_count);
+		sprintf(merge_string, "_light_%d", rooms[room_num].light_count);
 		rooms[room_num].light_count++;
 		strcat(name_string, merge_string);
 		discovery_light_create(BT_MESH_MODEL_ID_GEN_ONOFF_SRV, addr, name_string);
@@ -402,7 +396,7 @@ static void add_element_to_hass(uint16_t model_id, uint16_t addr, uint16_t group
 			rooms[room_num].switch_group_added_to_hass = true;
 		}
 
-		sprintf(merge_string, " switch %d", rooms[room_num].switch_count);
+		sprintf(merge_string, "_switch_%d", rooms[room_num].switch_count);
 		rooms[room_num].switch_count++;
 		strcat(name_string, merge_string);
 		discovery_binary_sensor_create(BT_MESH_MODEL_ID_GEN_ONOFF_CLI, addr, name_string);
@@ -415,10 +409,6 @@ void mqtt_msg_handler(uint16_t model_id, uint16_t addr, uint8_t *data,
 	switch (model_id) {
 	case HASS_DISCOVERY_REQUEST:
 		/* Dummy discovery */
-		discovery_light_create(0x1002, 0x0004, "McWong");
-		discovery_light_create(0x1002, 0x0007, "McWong2");
-		discovery_light_create(0x1002, 0x000e, "McWong3");
-		discovery_binary_sensor_create(0x1001, 0x0009, "nrfSwitch1");
 		break;
 
 	case BT_MESH_MODEL_ID_GEN_ONOFF_SRV: {
@@ -596,8 +586,4 @@ void main(void)
 	if (err) {
 		printk("Bluetooth init failed (err %d)\n", err);
 	}
-	discovery_light_create(1, 2, "anders");
-	discovery_light_create(1, 2, "anders");
-	discovery_light_create(1, 2, "anders");
-	discovery_light_create(1, 2, "anders");
 }

@@ -1,10 +1,5 @@
-/*
- * Copyright (c) 2020 Nordic Semiconductor ASA
- *
- * SPDX-License-Identifier: LicenseRef-BSD-5-Clause-Nordic
- */
 
-/** CA certificate for mqtt.eclipse.org. */
+/** CA certificate for hairdresser.cloudmqtt.com. */
 #define CA_CERTIFICATE \
 	"-----BEGIN CERTIFICATE-----\n" \
 	"MIIF3jCCA8agAwIBAgIQAf1tMPyjylGoG7xkDjUDLTANBgkqhkiG9w0BAQwFADCB\n" \

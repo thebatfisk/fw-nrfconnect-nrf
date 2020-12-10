@@ -1,8 +1,3 @@
-/*
- * Copyright (c) 2020 Nordic Semiconductor ASA
- *
- * SPDX-License-Identifier: LicenseRef-BSD-5-Clause-Nordic
- */
 
 #include <zephyr.h>
 #include <stdio.h>
@@ -66,7 +61,6 @@ static void uart_isr(struct device *unused, void *user_data)
 		uint8_t byte;
 
 		uart_fifo_read(uart_dev, &byte, sizeof(byte));
-		// printk("Byte recieved on uart: %d\n", byte);
 		int ret_code = slip_decode_add_byte(&slip, byte);
 
 		switch (ret_code) {
@@ -118,7 +112,6 @@ void uart_simple_send(struct uart_channel_ctx *channel_ctx, uint8_t *data,
 		      uint16_t len)
 {
 	k_mutex_lock(&uart_send_mtx, K_FOREVER);
-	printk("Ctx %d ENTER\n", channel_ctx->channel_id);
 	uint8_t buf[len + CHECKSUM_SIZE + CHANNEL_ID_SIZE];
 	uint8_t buf_idx = 0;
 
@@ -143,7 +136,6 @@ void uart_simple_send(struct uart_channel_ctx *channel_ctx, uint8_t *data,
 	for (int i = 0; i < slip_buf_len; i++) {
 		uart_poll_out(uart_dev, slip_buf[i]);
 	}
-	printk("Ctx %d ENDS\n", channel_ctx->channel_id);
 	k_mutex_unlock(&uart_send_mtx);
 }
 
@@ -205,7 +197,8 @@ static void rx_thread_create(void)
 {
 	k_thread_create(&rx_thread_data, rx_thread_stack,
 			K_THREAD_STACK_SIZEOF(rx_thread_stack), rx_thread, NULL,
-			NULL, NULL, K_PRIO_COOP(UART_RX_THREAD_PRIORITY), 0, K_NO_WAIT);
+			NULL, NULL, K_PRIO_COOP(UART_RX_THREAD_PRIORITY), 0,
+			K_NO_WAIT);
 	k_thread_name_set(&rx_thread_data, "Uart Simple Rx");
 }
 

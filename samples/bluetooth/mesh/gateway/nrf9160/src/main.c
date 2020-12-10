@@ -20,54 +20,52 @@
 
 #include "certificates.h"
 
-/** Forward declarations */
-void mqtt_rx_callback(struct net_buf *get_buf);
+/* Forward declarations */
+void mqtt_serial_rx_callback(struct net_buf *get_buf);
 void prov_conf_rx_callback(struct net_buf *get_buf);
 
-
-/** Provisioning and configuration serial channel */
+/* Provisioning and configuration serial channel */
 static struct uart_channel_ctx prov_conf_serial_chan = {
 	.channel_id = 2,
 	.rx_cb = prov_conf_rx_callback,
 };
-/** MQTT serial channel */
+/* MQTT serial channel */
 static struct uart_channel_ctx mqtt_serial_chan = {
 	.channel_id = 1,
-	.rx_cb = mqtt_rx_callback,
+	.rx_cb = mqtt_serial_rx_callback,
 };
-/** MQTT RX thread stack */
+/* MQTT RX thread stack */
 static K_THREAD_STACK_DEFINE(mqtt_rx_thread_stack, 1536);
-/** MQTT RX thread context*/
+/* MQTT RX thread context */
 static struct k_thread mqtt_rx_thread_ctx;
-/** MQTT RX buffer */
+/* MQTT RX buffer */
 static uint8_t rx_buffer[CONFIG_MQTT_MESSAGE_BUFFER_SIZE];
-/** MQTT TX buffer */
+/* MQTT TX buffer */
 static uint8_t tx_buffer[CONFIG_MQTT_MESSAGE_BUFFER_SIZE];
-/** MQTT client context */
+/* MQTT client context */
 static uint8_t payload_buf[CONFIG_MQTT_PAYLOAD_BUFFER_SIZE];
-/** MQTT client context */
+/* MQTT client context */
 static struct mqtt_client client;
-/** MQTT broker context */
+/* MQTT broker context */
 static struct sockaddr_storage broker;
-/** MQTT file descriptor */
+/* MQTT file descriptor */
 static struct pollfd fds;
-/** MQTT broker user */
+/* MQTT broker user */
 struct mqtt_utf8 user = {
-    .utf8 = CONFIG_MQTT_USER,
-    .size = sizeof(CONFIG_MQTT_USER) - 1,
+	.utf8 = CONFIG_MQTT_USER,
+	.size = sizeof(CONFIG_MQTT_USER) - 1,
 };
-/** MQTT broker password */
+/* MQTT broker password */
 struct mqtt_utf8 password = {
-    .utf8 = CONFIG_MQTT_PW,
-    .size = sizeof(CONFIG_MQTT_PW) - 1,
+	.utf8 = CONFIG_MQTT_PW,
+	.size = sizeof(CONFIG_MQTT_PW) - 1,
 };
 
 static int certificates_provision(void)
 {
 	int err = modem_key_mgmt_write(CONFIG_MQTT_TLS_SEC_TAG,
-				   MODEM_KEY_MGMT_CRED_TYPE_CA_CHAIN,
-				   CA_CERTIFICATE,
-				   strlen(CA_CERTIFICATE));
+				       MODEM_KEY_MGMT_CRED_TYPE_CA_CHAIN,
+				       CA_CERTIFICATE, strlen(CA_CERTIFICATE));
 
 	if (err) {
 		printk("Failed to provision certificate, Err: %d\n", err);
@@ -78,7 +76,8 @@ static int certificates_provision(void)
 	return err;
 }
 
-static int mqtt_serial_publish(const struct mqtt_publish_param *param, uint8_t *data, size_t len)
+static int mqtt_serial_publish(const struct mqtt_publish_param *param,
+			       uint8_t *data, size_t len)
 {
 	struct mqtt_publish_param out_param;
 
@@ -93,7 +92,8 @@ static int mqtt_serial_publish(const struct mqtt_publish_param *param, uint8_t *
 
 	uint8_t out_buf[256];
 	uint16_t msg_len;
-	int err = mqtt_serial_msg_encode(&out_param, out_buf, sizeof(out_buf), &msg_len);
+	int err = mqtt_serial_msg_encode(&out_param, out_buf, sizeof(out_buf),
+					 &msg_len);
 
 	if (!err) {
 		uart_simple_send(&mqtt_serial_chan, out_buf, msg_len);
@@ -174,9 +174,11 @@ void mqtt_evt_handler(struct mqtt_client *const c, const struct mqtt_evt *evt)
 
 		err = publish_get_payload(c, p->message.payload.len);
 		if (err >= 0) {
-			mqtt_serial_publish(p, payload_buf, p->message.payload.len);
+			mqtt_serial_publish(p, payload_buf,
+					    p->message.payload.len);
 		} else {
-			printk("Failed to retrive on-air MQTT paiload, Err: %d\n", err);
+			printk("Failed to retrive on-air MQTT paiload, Err: %d\n",
+			       err);
 
 			err = mqtt_disconnect(c);
 			if (err) {
@@ -205,10 +207,8 @@ static int broker_init(void)
 	int err;
 	struct addrinfo *result;
 	struct addrinfo *addr;
-	struct addrinfo hints = {
-		.ai_family = AF_INET,
-		.ai_socktype = SOCK_STREAM
-	};
+	struct addrinfo hints = { .ai_family = AF_INET,
+				  .ai_socktype = SOCK_STREAM };
 
 	err = getaddrinfo(CONFIG_MQTT_BROKER_HOSTNAME, NULL, &hints, &result);
 	if (err) {
@@ -220,7 +220,6 @@ static int broker_init(void)
 
 	/* Look for address of the broker. */
 	while (addr != NULL) {
-		/* IPv4 Address. */
 		if (addr->ai_addrlen == sizeof(struct sockaddr_in)) {
 			struct sockaddr_in *broker4 =
 				((struct sockaddr_in *)&broker);
@@ -228,25 +227,24 @@ static int broker_init(void)
 
 			broker4->sin_addr.s_addr =
 				((struct sockaddr_in *)addr->ai_addr)
-				->sin_addr.s_addr;
+					->sin_addr.s_addr;
 			broker4->sin_family = AF_INET;
 			broker4->sin_port = htons(CONFIG_MQTT_BROKER_PORT);
 
-			inet_ntop(AF_INET, &broker4->sin_addr.s_addr,
-				  ipv4_addr, sizeof(ipv4_addr));
+			inet_ntop(AF_INET, &broker4->sin_addr.s_addr, ipv4_addr,
+				  sizeof(ipv4_addr));
 			printk("IPv4 Address found %s\n", ipv4_addr);
 			break;
 		} else {
 			printk("ai_addrlen = %u should be %u or %u\n",
-				(unsigned int)addr->ai_addrlen,
-				(unsigned int)sizeof(struct sockaddr_in),
-				(unsigned int)sizeof(struct sockaddr_in6));
+			       (unsigned int)addr->ai_addrlen,
+			       (unsigned int)sizeof(struct sockaddr_in),
+			       (unsigned int)sizeof(struct sockaddr_in6));
 		}
 
 		addr = addr->ai_next;
 	}
 
-	/* Free the address. */
 	freeaddrinfo(result);
 
 	return err;
@@ -359,20 +357,19 @@ static void mqtt_rx_thread(void *p1, void *p2, void *p3)
 static void mqtt_rx_thread_create(void)
 {
 	k_thread_create(&mqtt_rx_thread_ctx, mqtt_rx_thread_stack,
-			K_THREAD_STACK_SIZEOF(mqtt_rx_thread_stack), mqtt_rx_thread,
-			NULL, NULL, NULL, K_PRIO_COOP(6), 0, K_NO_WAIT);
-	k_thread_name_set(&mqtt_rx_thread_ctx, "MQTT Rx");
+			K_THREAD_STACK_SIZEOF(mqtt_rx_thread_stack),
+			mqtt_rx_thread, NULL, NULL, NULL, K_PRIO_COOP(6), 0,
+			K_NO_WAIT);
+	k_thread_name_set(&mqtt_rx_thread_ctx, "MQTT RX");
 }
 
-void mqtt_rx_callback(struct net_buf *get_buf)
+void mqtt_serial_rx_callback(struct net_buf *get_buf)
 {
-		struct mqtt_publish_param param;
+	struct mqtt_publish_param param;
 
-		mqtt_serial_msg_decode(get_buf, &param);
-		mqtt_publish(&client, &param);
+	mqtt_serial_msg_decode(get_buf, &param);
+	mqtt_publish(&client, &param);
 }
-
-// **************** Erik code below (until main) *****************
 
 K_SEM_DEFINE(sem_gw_system_state, 0, 1);
 K_SEM_DEFINE(sem_choose_room, 0, 1);
@@ -381,8 +378,7 @@ K_SEM_DEFINE(sem_get_unprov_dev_num, 0, 1);
 K_SEM_DEFINE(sem_device_added, 0, 1);
 K_SEM_DEFINE(sem_get_model_info, 0, 1);
 
-enum gw_system_states
-{
+enum gw_system_states {
 	s_start = 0,
 	s_idle,
 	s_blink_dev,
@@ -425,10 +421,12 @@ static void button_work_handler(struct k_work *work)
 	if ((button_state & BUTTON_UP) && (curr_but_pressed != BUTTON_UP)) {
 		printk("BUTTON UP\n");
 		curr_but_pressed = BUTTON_UP;
-	} else if (button_state & BUTTON_DOWN && (curr_but_pressed != BUTTON_DOWN)) {
+	} else if (button_state & BUTTON_DOWN &&
+		   (curr_but_pressed != BUTTON_DOWN)) {
 		printk("BUTTON DOWN\n");
 		curr_but_pressed = BUTTON_DOWN;
-	} else if (button_state & BUTTON_LEFT && (curr_but_pressed != BUTTON_LEFT)) {
+	} else if (button_state & BUTTON_LEFT &&
+		   (curr_but_pressed != BUTTON_LEFT)) {
 		printk("BUTTON LEFT\n");
 		curr_but_pressed = BUTTON_LEFT;
 
@@ -437,7 +435,8 @@ static void button_work_handler(struct k_work *work)
 			k_sem_give(&sem_gw_system_state);
 		} else if (gw_system_state == s_blink_dev) {
 			serial_opcode = oc_prov_link_active;
-			uart_simple_send(&prov_conf_serial_chan, &serial_opcode, 1);
+			uart_simple_send(&prov_conf_serial_chan, &serial_opcode,
+					 1);
 			k_sem_take(&sem_prov_link_active, K_SECONDS(3));
 
 			if (!prov_link_active) {
@@ -452,7 +451,8 @@ static void button_work_handler(struct k_work *work)
 				k_sem_give(&sem_choose_room);
 			}
 		}
-	} else if (button_state & BUTTON_RIGHT && (curr_but_pressed != BUTTON_RIGHT)) {
+	} else if (button_state & BUTTON_RIGHT &&
+		   (curr_but_pressed != BUTTON_RIGHT)) {
 		printk("BUTTON RIGHT\n");
 		curr_but_pressed = BUTTON_RIGHT;
 
@@ -461,13 +461,16 @@ static void button_work_handler(struct k_work *work)
 			k_sem_give(&sem_gw_system_state);
 		} else if (gw_system_state == s_blink_dev) {
 			serial_opcode = oc_prov_link_active;
-			uart_simple_send(&prov_conf_serial_chan, &serial_opcode, 1);
+			uart_simple_send(&prov_conf_serial_chan, &serial_opcode,
+					 1);
 			k_sem_take(&sem_prov_link_active, K_SECONDS(3));
 
 			if (!prov_link_active) {
 				serial_opcode = oc_unprov_dev_num;
-				uart_simple_send(&prov_conf_serial_chan, &serial_opcode, 1);
-				k_sem_take(&sem_get_unprov_dev_num, K_SECONDS(3));
+				uart_simple_send(&prov_conf_serial_chan,
+						 &serial_opcode, 1);
+				k_sem_take(&sem_get_unprov_dev_num,
+					   K_SECONDS(3));
 
 				if (chosen_dev < unprov_dev_num - 1) {
 					chosen_dev++;
@@ -475,12 +478,14 @@ static void button_work_handler(struct k_work *work)
 				}
 			}
 		} else if (gw_system_state == s_prov_conf_dev) {
-			if (room_iterator < (sizeof(rooms) / sizeof(rooms[0]) - 1)) {
+			if (room_iterator <
+			    (sizeof(rooms) / sizeof(rooms[0]) - 1)) {
 				room_iterator++;
 				k_sem_give(&sem_choose_room);
 			}
 		}
-	} else if (button_state & BUTTON_SELECT && (curr_but_pressed != BUTTON_SELECT)) {
+	} else if (button_state & BUTTON_SELECT &&
+		   (curr_but_pressed != BUTTON_SELECT)) {
 		printk("BUTTON SELECT\n");
 		curr_but_pressed = BUTTON_SELECT;
 
@@ -489,7 +494,8 @@ static void button_work_handler(struct k_work *work)
 			k_sem_give(&sem_gw_system_state);
 		} else if (gw_system_state == s_idle) {
 			serial_opcode = oc_unprov_dev_num;
-			uart_simple_send(&prov_conf_serial_chan, &serial_opcode, 1);
+			uart_simple_send(&prov_conf_serial_chan, &serial_opcode,
+					 1);
 			k_sem_take(&sem_get_unprov_dev_num, K_SECONDS(3));
 
 			if (unprov_dev_num > 0) {
@@ -498,7 +504,8 @@ static void button_work_handler(struct k_work *work)
 			}
 		} else if (gw_system_state == s_blink_dev) {
 			serial_opcode = oc_prov_link_active;
-			uart_simple_send(&prov_conf_serial_chan, &serial_opcode, 1);
+			uart_simple_send(&prov_conf_serial_chan, &serial_opcode,
+					 1);
 			k_sem_take(&sem_prov_link_active, K_SECONDS(3));
 
 			if (!prov_link_active) {
@@ -640,7 +647,8 @@ void main(void)
 
 			serial_message[0] = oc_blink_device;
 			serial_message[1] = chosen_dev;
-			uart_simple_send(&prov_conf_serial_chan, serial_message, 2);
+			uart_simple_send(&prov_conf_serial_chan, serial_message,
+					 2);
 
 			update_unprov_devs = true;
 			k_delayed_work_submit(&unprov_devs_work, K_NO_WAIT);
@@ -657,23 +665,27 @@ void main(void)
 				serial_message[0] = oc_provision_device;
 				serial_message[1] = 0xff;
 				memcpy(&serial_message[2], nfc_uuid, 16);
-				uart_simple_send(&prov_conf_serial_chan, serial_message, 18);
+				uart_simple_send(&prov_conf_serial_chan,
+						 serial_message, 18);
 
 				gw_nfc_stop();
 				uuid_from_nfc = false;
 			} else {
 				serial_message[0] = oc_provision_device;
 				serial_message[1] = chosen_dev;
-				uart_simple_send(&prov_conf_serial_chan, serial_message, 2);
+				uart_simple_send(&prov_conf_serial_chan,
+						 serial_message, 2);
 			}
 
 			k_sem_take(&sem_device_added, K_SECONDS(10));
 
 			serial_message[0] = oc_get_model_info;
-			uart_simple_send(&prov_conf_serial_chan, serial_message, 1);
+			uart_simple_send(&prov_conf_serial_chan, serial_message,
+					 1);
 			k_sem_take(&sem_get_model_info, K_SECONDS(10));
 
-			printk("Server count: %d - Client count: %d\n", mod_inf.srv_count, mod_inf.cli_count);
+			printk("Server count: %d - Client count: %d\n",
+			       mod_inf.srv_count, mod_inf.cli_count);
 
 			room_iterator = 0;
 
@@ -683,18 +695,22 @@ void main(void)
 				display_set_cursor(0, 0);
 				display_write_string("Light ");
 				display_write_number(i);
-				while (!room_chosen)
-				{
+				while (!room_chosen) {
 					display_set_cursor(0, 1);
-					display_write_string(rooms[room_iterator].name);
+					display_write_string(
+						rooms[room_iterator].name);
 					k_sem_take(&sem_choose_room, K_FOREVER);
 				}
 
 				serial_message[0] = oc_configure_server;
 				serial_message[1] = i;
-				serial_message[2] = rooms[room_iterator].group_addr >> 8;
-				serial_message[3] = rooms[room_iterator].group_addr & 0x00ff;
-				uart_simple_send(&prov_conf_serial_chan, serial_message, 4);
+				serial_message[2] =
+					rooms[room_iterator].group_addr >> 8;
+				serial_message[3] =
+					rooms[room_iterator].group_addr &
+					0x00ff;
+				uart_simple_send(&prov_conf_serial_chan,
+						 serial_message, 4);
 			}
 
 			for (int i = 0; i < mod_inf.cli_count; i++) {
@@ -703,18 +719,22 @@ void main(void)
 				display_set_cursor(0, 0);
 				display_write_string("Light Switch ");
 				display_write_number(i);
-				while (!room_chosen)
-				{
+				while (!room_chosen) {
 					display_set_cursor(0, 1);
-					display_write_string(rooms[room_iterator].name);
+					display_write_string(
+						rooms[room_iterator].name);
 					k_sem_take(&sem_choose_room, K_FOREVER);
 				}
 
 				serial_message[0] = oc_configure_client;
 				serial_message[1] = i;
-				serial_message[2] = rooms[room_iterator].group_addr >> 8;
-				serial_message[3] = rooms[room_iterator].group_addr & 0x00ff;
-				uart_simple_send(&prov_conf_serial_chan, serial_message, 4);
+				serial_message[2] =
+					rooms[room_iterator].group_addr >> 8;
+				serial_message[3] =
+					rooms[room_iterator].group_addr &
+					0x00ff;
+				uart_simple_send(&prov_conf_serial_chan,
+						 serial_message, 4);
 			}
 
 			gw_system_state = s_idle;

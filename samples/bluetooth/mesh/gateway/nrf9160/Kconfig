@@ -1,38 +1,26 @@
-#
-# Copyright (c) 2020 Nordic Semiconductor ASA
-#
-# SPDX-License-Identifier: LicenseRef-BSD-5-Clause-Nordic
-#
 
-menu "MQTT simple sample"
+menu "BTM gateway"
 
 config MQTT_USER
-	string "MQTT publish topic"
-	default "nrf9160"
+	string "Broker username"
 
 config MQTT_PW
-	string "MQTT publish topic"
-	default "anders"
+	string "Broker password"
 
 config MQTT_PUB_TOPIC
-	string "MQTT publish topic"
-	default "my/publish/topic"
+	string "Gateway publishing topic"
 
 config MQTT_SUB_TOPIC
-	string "MQTT subscribe topic"
-	default "my/subscribe/topic"
+	string "Gateway subscription topic"
 
 config MQTT_CLIENT_ID
-	string "MQTT Client ID"
-	default "my-client-id"
+	string "Client ID of the gateway"
 
 config MQTT_BROKER_HOSTNAME
-	string "MQTT broker hostname"
-	default "mqtt.eclipse.org"
+	string "Broker hostname"
 
 config MQTT_BROKER_PORT
-	int "MQTT broker port"
-	default 1883
+	int "Broker port"
 
 config MQTT_MESSAGE_BUFFER_SIZE
 	int "MQTT message buffer size"
