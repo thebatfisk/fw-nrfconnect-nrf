@@ -1,9 +1,3 @@
-/*
- * Copyright (c) 2020 Nordic Semiconductor ASA
- *
- * SPDX-License-Identifier: LicenseRef-BSD-5-Clause-Nordic
- */
-
 #ifndef BT_MESH_PROV_CONF_SERIAL_H__
 #define BT_MESH_PROV_CONF_SERIAL_H__
 

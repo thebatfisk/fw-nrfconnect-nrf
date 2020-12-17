@@ -1,4 +1,3 @@
-
 #include <net/mqtt.h>
 #include <net/buf.h>
 

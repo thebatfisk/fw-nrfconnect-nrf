@@ -1,5 +1,5 @@
 sample:
-  name: BTM gateway 9160
+  name: BTM gateway 52840
 tests:
   samples.mesh.gateway.nrf52840:
     build_only: true

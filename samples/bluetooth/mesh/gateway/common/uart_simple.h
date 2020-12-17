@@ -1,4 +1,3 @@
-
 #include <net/buf.h>
 
 #ifndef BT_MESH_UART_SIMPLE_H__

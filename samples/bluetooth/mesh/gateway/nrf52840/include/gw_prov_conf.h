@@ -1,9 +1,3 @@
-/*
- * Copyright (c) 2020 Nordic Semiconductor ASA
- *
- * SPDX-License-Identifier: LicenseRef-BSD-5-Clause-Nordic
- */
-
 #ifndef GW_PROVISIONING_H__
 #define GW_PROVISIONING_H__
 

@@ -1,4 +1,3 @@
-
 #include <zephyr.h>
 #include <stdio.h>
 #include <string.h>
