@@ -10,6 +10,7 @@ project(NONE)
 
 target_sources(app PRIVATE
 	src/main.c
+	src/model_handler.c
 	src/pca20036_ethernet.c
 	src/ethernet_dfu.c
 	src/ethernet_command_system.c
