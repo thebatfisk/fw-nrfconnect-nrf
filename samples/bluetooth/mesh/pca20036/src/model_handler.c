@@ -14,15 +14,26 @@ static void led_set(struct bt_mesh_onoff_srv *srv, struct bt_mesh_msg_ctx *ctx,
 		    const struct bt_mesh_onoff_set *set,
 		    struct bt_mesh_onoff_status *rsp)
 {
+	printk("LED set: %d\n", set->on_off);
+
 	if (set->on_off) {
-		hp_led_off();
-	} else {
 		hp_led_on();
+	} else {
+		hp_led_off();
 	}
+
+	rsp->present_on_off = hp_led_get_state();
+}
+
+static void led_get(struct bt_mesh_onoff_srv *srv, struct bt_mesh_msg_ctx *ctx,
+		    struct bt_mesh_onoff_status *rsp)
+{
+	rsp->present_on_off = hp_led_get_state();
 }
 
 static const struct bt_mesh_onoff_srv_handlers onoff_handlers = {
 	.set = led_set,
+	.get = led_get,
 };
 
 struct bt_mesh_onoff_srv led_srv = BT_MESH_ONOFF_SRV_INIT(&onoff_handlers);
@@ -69,12 +80,12 @@ static struct bt_mesh_health_srv health_srv = {
 BT_MESH_HEALTH_PUB_DEFINE(health_pub, 0);
 
 static struct bt_mesh_elem elements[] = {
-	BT_MESH_ELEM(
-		1, BT_MESH_MODEL_LIST(
-			BT_MESH_MODEL_CFG_SRV,
-			BT_MESH_MODEL_HEALTH_SRV(&health_srv, &health_pub),
-			BT_MESH_MODEL_ONOFF_SRV(&led_srv)),
-		BT_MESH_MODEL_NONE),
+	BT_MESH_ELEM(1,
+		     BT_MESH_MODEL_LIST(BT_MESH_MODEL_CFG_SRV,
+					BT_MESH_MODEL_HEALTH_SRV(&health_srv,
+								 &health_pub),
+					BT_MESH_MODEL_ONOFF_SRV(&led_srv)),
+		     BT_MESH_MODEL_NONE),
 };
 
 static const struct bt_mesh_comp comp = {
