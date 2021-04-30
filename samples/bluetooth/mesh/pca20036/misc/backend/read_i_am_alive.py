@@ -1,6 +1,7 @@
 import socket
 import ctypes
 import binascii
+import nodes_info
 
 CMD_I_AM_ALIVE_BYTE = 0x02
 
@@ -9,12 +10,13 @@ rx_sock.bind(("0.0.0.0", 10001))
 
 node_version_dict = dict()
 
+list_of_nodes = list()
 count = 0
 
 while True:
     raw_data, addr = rx_sock.recvfrom(4096)  # buffer size is 4096 bytes
 
-    if (len(raw_data) == 22):
+    if (len(raw_data) == 34):
         opcode = int(raw_data[4])
 
         if opcode == CMD_I_AM_ALIVE_BYTE:
@@ -31,12 +33,28 @@ while True:
 
                 if (version > current_version):
                     node_version_dict[str(mac)] = version
+                    
+                    for i in range(len(nodes_info.nodes_mac_list_21)):
+                        if (own_mac == binascii.hexlify(nodes_info.nodes_mac_list_21[i])):
+                            list_of_nodes.append(i + 1)
+                            list_of_nodes.sort()
+                            print(list_of_nodes)
+                            break
+
                     print("MAC: " + mac_string + " Version: " + str(version))
                     
                     count += 1
                     print("Count: " + str(count))
             else:
                 node_version_dict[str(mac)] = version
+
+                for i in range(len(nodes_info.nodes_mac_list_21)):
+                    if (own_mac == binascii.hexlify(nodes_info.nodes_mac_list_21[i])):
+                        list_of_nodes.append(i + 1)
+                        list_of_nodes.sort()
+                        print(list_of_nodes)
+                        break
+
                 print("MAC: " + mac_string + " Version: " + str(version))
                 
                 count += 1
