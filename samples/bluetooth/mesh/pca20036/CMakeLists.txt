@@ -13,6 +13,7 @@ target_sources(app PRIVATE
 	src/pca20036_ethernet.c
 	src/ethernet_dfu.c
 	src/ethernet_command_system.c
+	src/ethernet_logging.c
 	src/ethernet_utils.c
 	src/hp_led.c
 	../../../../../modules/hal/wiznet/Callback/dhcp_cb.c
